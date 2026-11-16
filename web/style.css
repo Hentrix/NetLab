@@ -426,3 +426,19 @@
   .workspace-header .actions{max-width:100%;overflow-x:auto;gap:5px}
   .workspace-header .lab-action{font-size:11px;padding:8px 10px}
 }
+
+/* v0.6.4: keep canvas labels crisp and visually integrated with the grid.
+   Remove the opaque white patches that were visible behind names on hover. */
+.node .device-name,
+.node:hover .device-name,
+.node.active .device-name,
+.node.connect-target .device-name {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: #253c52;
+  text-shadow: none;
+  padding: 2px 3px;
+}
+.node:hover .device-name { color: #214e78; }
+.node.active .device-name { color: #184f80; }
