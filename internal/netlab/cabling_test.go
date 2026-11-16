@@ -233,3 +233,44 @@ func TestFakeQMPErrorPropagation(t *testing.T) {
 	}
 }
 func TestMain(m *testing.M) { os.Exit(m.Run()) }
+
+// Styling is metadata. Even while guests are online, updating it must not
+// call OVS, change a TAP interface or ask QEMU to drop carrier.
+func TestCableAppearanceUpdateDoesNotTouchLiveNetwork(t *testing.T) {
+	s := newTestServer(t)
+	lab := Lab{ID: newID(), Name: "style", Nodes: []Node{{ID: newID(), Name: "R1", NICCount: 4}, {ID: newID(), Name: "R2", NICCount: 4}}}
+	original := Link{ID: newID(), A: lab.Nodes[0].ID, B: lab.Nodes[1].ID, APort: 0, BPort: 0}
+	lab.Links = []Link{original}
+	s.store.mu.Lock()
+	s.store.State.Labs = append(s.store.State.Labs, lab)
+	if err := s.store.save(); err != nil {
+		t.Fatal(err)
+	}
+	s.store.mu.Unlock()
+	s.engine.execOp = func(string, ...string) error { t.Fatal("Style-only update called OVS"); return nil }
+	uri := "/api/labs/" + lab.ID + "/links/" + original.ID
+	code, body := httpCall(t, s, "PATCH", uri, []byte(`{"color":"#2f77bb","lineWidth":3,"lineStyle":"dashed"}`), true)
+	assertStatus(t, code, 200, body)
+	var modified Link
+	if err := json.Unmarshal(body, &modified); err != nil {
+		t.Fatal(err)
+	}
+	if modified.Color != "#2f77bb" || modified.LineWidth != 3 || modified.LineStyle != "dashed" || modified.APort != 0 {
+		t.Fatalf("incorrect styled cable: %+v", modified)
+	}
+	reloaded, err := LoadStore(filepath.Join(s.data, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := reloaded.State.Labs[0].Links[0]
+	if saved.Color != "#2f77bb" || saved.LineWidth != 3 || saved.LineStyle != "dashed" {
+		t.Fatalf("style not persisted: %+v", saved)
+	}
+	for _, v := range []string{`{"color":"red"}`, `{"lineWidth":9}`, `{"lineStyle":"<script>"}`} {
+		code, body = httpCall(t, s, "PATCH", uri, []byte(v), true)
+		assertStatus(t, code, 400, body)
+	}
+	if len(s.store.State.Labs[0].Links) != 1 {
+		t.Fatal("failed validation modified links")
+	}
+}

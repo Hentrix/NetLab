@@ -1,3 +1,4 @@
+import {layoutPortBadges} from './cable-geometry.mjs';
 // A self-contained, dependency-free topology PNG renderer.
 // It renders the entire model, not the panned/clipped viewport. This means
 // users get all cables, port labels, appliance images and annotations even if
@@ -46,30 +47,32 @@ function drawBackground(ctx,box){
   for(let y=Math.ceil(box.minY/20)*20;y<=endY;y+=20)
     for(let x=Math.ceil(box.minX/20)*20;x<=endX;x+=20){ctx.beginPath();ctx.arc(x,y,.7,0,Math.PI*2);ctx.fill();}
 }
-function drawPortLabel(ctx,point,toward,name){
-  const dx=toward.x-point.x,dy=toward.y-point.y,len=Math.hypot(dx,dy)||1;
-  const vertical=Math.abs(dy)>Math.abs(dx);
-  const x=point.x+dx/len*(vertical?22:23),y=point.y+dy/len*(vertical?23:18);
-  ctx.font='600 10.5px "Segoe UI",Arial,sans-serif';
-  const w=Math.max(30,ctx.measureText(name).width+12),h=17;
-  roundedRect(ctx,x-w/2,y-h/2,w,h,4);
-  ctx.fillStyle='rgba(255,255,255,.97)';ctx.fill();ctx.lineWidth=.85;ctx.strokeStyle='#e0e7ed';ctx.stroke();
-  ctx.fillStyle='#314b63';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(name,x,y+.3);
+function drawPortLabel(ctx,label,name){
+ if(!label)return;
+ const {x,y,width,height}=label;
+ ctx.font='600 10.5px "Segoe UI",Arial,sans-serif';
+ roundedRect(ctx,x-width/2,y-height/2,width,height,5);
+ ctx.fillStyle='rgba(255,255,255,.97)';ctx.fill();ctx.lineWidth=.85;ctx.strokeStyle='#d9e4ee';ctx.stroke();
+ ctx.fillStyle='#314b63';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(name,x,y+.3);
 }
 function drawCables(ctx,lab,layout,labelPort){
   const nodeMap=new Map(lab.nodes.map(n=>[n.id,n]));
+  const badges=layoutPortBadges(lab,layout,labelPort);
   for(const link of lab.links||[]){
     const a=nodeMap.get(link.a),b=nodeMap.get(link.b),geo=layout.get(link.id);
     if(!a||!b||!geo)continue;
     const {A,B}=geo;
-    const colors={up:'#627f9d',waiting:'#cb8730',down:'#8194a5',error:'#bd4f4f'};
-    const color=colors[link.status]||colors.down;
-    ctx.save();ctx.strokeStyle=color;ctx.lineWidth=2;ctx.lineCap='round';
-    ctx.setLineDash(link.status==='waiting'?[8,5]:link.status==='up'?[]:[5,4]);
+    const colors={up:'#387da9',waiting:'#cb8730',down:'#568bb8',error:'#bd4f4f'};
+    const safeColor=/^#[0-9a-fA-F]{6}$/.test(link.color||'')?link.color:null;
+    ctx.save();ctx.strokeStyle=safeColor||colors[link.status]||colors.down;
+    ctx.lineWidth=[1,2,3,4].includes(Number(link.lineWidth))?Number(link.lineWidth):2;
+    ctx.lineCap='round';
+    const style=link.lineStyle||(['waiting','error'].includes(link.status)?'dashed':'solid');
+    ctx.setLineDash(style==='dashed'?[8,5]:style==='dotted'?[2,5]:[]);
     ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x,B.y);ctx.stroke();ctx.setLineDash([]);
-    for(const p of [A,B]){ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.lineWidth=1.8;ctx.strokeStyle='#95a9b8';ctx.stroke();}
-    drawPortLabel(ctx,A,B,String(labelPort(a,link.aPort)));
-    drawPortLabel(ctx,B,A,String(labelPort(b,link.bPort)));
+    for(const p of [A,B]){ctx.beginPath();ctx.arc(p.x,p.y,2.8,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.lineWidth=1.8;ctx.strokeStyle='#95a9b8';ctx.stroke();}
+    drawPortLabel(ctx,badges.get(link.id)?.a,String(labelPort(a,link.aPort)));
+    drawPortLabel(ctx,badges.get(link.id)?.b,String(labelPort(b,link.bPort)));
     ctx.restore();
   }
 }

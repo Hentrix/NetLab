@@ -446,3 +446,19 @@
 /* v0.6.6: world coordinates can be negative after panning; do not clip
    nodes or Ethernet lines at the original (0,0) stage boundary. */
 .stage, .stage-position, #nodesLayer, #annotationsLayer, .links { overflow:visible; }
+
+/* v0.6.8: centred SVG controls and topology cables */
+.explorer-heading button{display:inline-grid;place-items:center;line-height:normal;vertical-align:middle}
+.explorer-heading button svg{display:block;width:19px;height:19px;flex:none}
+.explorer-chevron{display:inline-grid;place-items:center;transform:none;flex:0 0 16px;width:16px;height:16px;line-height:normal}
+.explorer-chevron svg{display:block;width:15px;height:15px;transition:transform .12s ease}
+.explorer-chevron.is-collapsed svg{transform:rotate(-90deg)}
+.explorer-group-head{min-height:37px;align-items:center}
+.network-wire{stroke:#568bb8;stroke-width:2;stroke-linecap:round;pointer-events:none}
+.cable-group.cable-up .network-wire{stroke:#387da9;stroke-width:2}
+.cable-group.cable-down .network-wire{stroke:#568bb8;stroke-width:2;stroke-dasharray:none}
+.cable-group.cable-waiting .network-wire{stroke:#cb8730;stroke-dasharray:8 5}
+.cable-group.cable-error .network-wire{stroke:#bd4f4f;stroke-dasharray:8 5}
+.cable-group:hover .network-wire{filter:drop-shadow(0 0 2px #3b82c499)}
+.port-badge rect{stroke:#b7cce2;stroke-width:1;fill:#fff;opacity:.98}
+.port-badge .wire-label{font-size:11px;fill:#31516e}

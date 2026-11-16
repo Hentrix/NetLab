@@ -53,7 +53,7 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		respond(w, 200, map[string]any{"status": "ok", "version": "0.6.7"})
+		respond(w, 200, map[string]any{"status": "ok", "version": "0.6.8"})
 	})
 	mux.Handle("/api/", s.auth(http.HandlerFunc(s.api)))
 	mux.Handle("/", http.FileServer(http.Dir(s.web)))
@@ -669,10 +669,35 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 // Failed database writes trigger best-effort physical rollback.
 func (s *Server) linksAPI(w http.ResponseWriter, r *http.Request, p []string, l *Lab) {
 	type request struct {
-		A     string `json:"a"`
-		B     string `json:"b"`
-		APort *int   `json:"aPort"`
-		BPort *int   `json:"bPort"`
+		A         string  `json:"a"`
+		B         string  `json:"b"`
+		APort     *int    `json:"aPort"`
+		BPort     *int    `json:"bPort"`
+		Color     *string `json:"color"`
+		LineWidth *int    `json:"lineWidth"`
+		LineStyle *string `json:"lineStyle"`
+	}
+	visual := func(old Link, req request) (Link, error) {
+		next := old
+		if req.Color != nil {
+			if *req.Color != "" && !safeHexColor.MatchString(*req.Color) {
+				return Link{}, errors.New("цвет линии должен быть #RRGGBB")
+			}
+			next.Color = *req.Color
+		}
+		if req.LineWidth != nil {
+			if *req.LineWidth < 0 || *req.LineWidth > 4 {
+				return Link{}, errors.New("толщина кабеля должна быть от 0 до 4 px")
+			}
+			next.LineWidth = *req.LineWidth
+		}
+		if req.LineStyle != nil {
+			if *req.LineStyle != "" && *req.LineStyle != "solid" && *req.LineStyle != "dashed" && *req.LineStyle != "dotted" {
+				return Link{}, errors.New("недопустимый тип линии")
+			}
+			next.LineStyle = *req.LineStyle
+		}
+		return next, nil
 	}
 	validate := func(req request, exclude string) (Link, error) {
 		if req.A == req.B || findNode(l, req.A) == nil || findNode(l, req.B) == nil {
@@ -719,6 +744,11 @@ func (s *Server) linksAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			return
 		}
 		next.ID = newID()
+		next, err = visual(next, req)
+		if err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
 		if err = s.engine.ConnectCable(*l, next); err != nil {
 			fail(w, 500, err.Error())
 			return
@@ -788,7 +818,21 @@ func (s *Server) linksAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 				fail(w, 409, err.Error())
 				return
 			}
+			// Preserve custom appearance when a cable is moved to other ports.
+			next.Color, next.LineWidth, next.LineStyle = old.Color, old.LineWidth, old.LineStyle
+			next, err = visual(next, req)
+			if err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
 			if next.A == old.A && next.B == old.B && next.APort == old.APort && next.BPort == old.BPort {
+				// Appearance-only updates must not interrupt a live OVS/QMP link.
+				l.Links[index] = next
+				if err := s.store.save(); err != nil {
+					l.Links[index] = old
+					fail(w, 500, err.Error())
+					return
+				}
 				next.Status = s.engine.CableStatus(*l, old)
 				respond(w, 200, next)
 				return

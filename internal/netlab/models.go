@@ -90,12 +90,15 @@ type Node struct {
 }
 
 type Link struct {
-	ID     string `json:"id"`
-	A      string `json:"a"`
-	B      string `json:"b"`
-	APort  int    `json:"aPort"`
-	BPort  int    `json:"bPort"`
-	Status string `json:"status,omitempty"` // runtime status, never persisted intentionally
+	ID        string `json:"id"`
+	A         string `json:"a"`
+	B         string `json:"b"`
+	APort     int    `json:"aPort"`
+	BPort     int    `json:"bPort"`
+	Color     string `json:"color,omitempty"`     // CSS hex, visual only
+	LineWidth int    `json:"lineWidth,omitempty"` // 0=default, otherwise 1-4px
+	LineStyle string `json:"lineStyle,omitempty"` // solid, dashed, dotted
+	Status    string `json:"status,omitempty"`    // runtime status, never persisted intentionally
 }
 
 type Lab struct {

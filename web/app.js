@@ -1,5 +1,5 @@
 import {portInfo,portCapacity,defaultSpeed,SPEEDS,speedText} from './network-ports.mjs';
-import {anchorFor,layoutParallelCables} from './cable-geometry.mjs';
+import {anchorFor,layoutParallelCables,layoutPortBadges} from './cable-geometry.mjs';
 import {deviceStatusLabel,deviceStatusStyle} from './device-status.mjs';
 import {annotationLimits,resizeAnnotationRect,MIN_FITTED_FONT_PX} from './annotation-layout.mjs';
 import {downloadTopologyPNG} from './topology-snapshot.mjs';
@@ -133,7 +133,7 @@ function renderExplorer(lab){
     const section=el('section','explorer-group');
     const heading=el('button','explorer-group-head');heading.type='button';
     const collapsed=state.collapsedGroups.has(cat.id);
-    const arrow=el('span','explorer-chevron',collapsed?'›':'⌄');
+    const arrow=el('span','explorer-chevron'+(collapsed?' is-collapsed':''));arrow.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
     heading.append(arrow,el('span','',cat.name),el('span','explorer-group-count',String(nodes.length)));
     heading.setAttribute('aria-expanded',String(!collapsed));
     heading.onclick=()=>{if(collapsed)state.collapsedGroups.delete(cat.id);else state.collapsedGroups.add(cat.id);renderExplorer(currentLab());};
@@ -178,34 +178,44 @@ const PORT_STYLES = [
 ];
 const portStyleOptions=selected=>PORT_STYLES.map(([value,label])=>`<option value="${value}"${selected===value?' selected':''}>${escapeHTML(label)}</option>`).join('');
 function svgEl(tag, attrs, parent){const node=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [k,v] of Object.entries(attrs))node.setAttribute(k,String(v));parent.append(node);return node;}
-// Distinct physical attachment slots for every cable in a parallel bundle.
-function drawPortBadge(parent,name,point,toward){
-  const dx=toward.x-point.x,dy=toward.y-point.y,dist=Math.hypot(dx,dy)||1;
-  const ux=dx/dist,uy=dy/dist,vertical=Math.abs(dy)>Math.abs(dx);
-  const width=Math.max(30,name.length*6.35+12),height=17;
-  // Place a badge beyond the wire endpoint; not on top of the device image.
-  const x=point.x+ux*(vertical?22:23),y=point.y+uy*(vertical?23:18);
-  const group=svgEl('g',{'class':'port-badge'},parent);
-  svgEl('rect',{x:x-width/2,y:y-height/2,width,height,rx:4},group);
-  const t=svgEl('text',{x,y:y+0.7,'text-anchor':'middle','dominant-baseline':'central',class:'wire-label'},group);
-  t.textContent=name;
+// One shared layout drives cable paths AND port labels. Labels are placed
+// against every other label and device, rather than per individual pair.
+function drawPortBadge(parent,name,placement){
+ if(!placement)return;
+ const {x,y,width,height}=placement;
+ const group=svgEl('g',{'class':'port-badge'},parent);
+ svgEl('rect',{x:x-width/2,y:y-height/2,width,height,rx:5},group);
+ const t=svgEl('text',{x,y:y+.4,'text-anchor':'middle','dominant-baseline':'central',class:'wire-label'},group);
+ t.textContent=name;
+}
+function cableVisual(link){
+ const color=/^#[0-9a-fA-F]{6}$/.test(link.color||'')?link.color:null;
+ const width=[1,2,3,4].includes(Number(link.lineWidth))?Number(link.lineWidth):2;
+ const style=['solid','dashed','dotted'].includes(link.lineStyle)?link.lineStyle:'solid';
+ return {color,width,style};
 }
 function renderWires(lab){
  const svg=$('#linkLayer');svg.replaceChildren();
  const layout=layoutParallelCables(lab);
+ const badges=layoutPortBadges(lab,layout,labelPort);
+ const nodes=new Map(lab.nodes.map(node=>[node.id,node]));
  for(const link of lab.links){
-   const a=lab.nodes.find(n=>n.id===link.a),b=lab.nodes.find(n=>n.id===link.b);
+   const a=nodes.get(link.a),b=nodes.get(link.b);
    const geo=layout.get(link.id);if(!a||!b||!geo)continue;
    const {A,B}=geo;
    const cable=svgEl('g',{'class':'cable-group cable-'+(link.status||'down'),'data-link':link.id},svg);
-   svgEl('line',{x1:A.x,y1:A.y,x2:B.x,y2:B.y,class:'network-wire'},cable);
-   svgEl('circle',{cx:A.x,cy:A.y,r:3,class:'wire-end'},cable);
-   svgEl('circle',{cx:B.x,cy:B.y,r:3,class:'wire-end'},cable);
-   drawPortBadge(cable,labelPort(a,link.aPort),A,B);
-   drawPortBadge(cable,labelPort(b,link.bPort),B,A);
+   const visual=cableVisual(link);
+   const wire=svgEl('path',{d:`M ${A.x} ${A.y} L ${B.x} ${B.y}`,class:'network-wire'},cable);
+   wire.style.strokeWidth=visual.width;
+   if(visual.color)wire.style.stroke=visual.color;
+   if(link.lineStyle)wire.style.strokeDasharray=visual.style==='dashed'?'8 5':visual.style==='dotted'?'2 5':'none';
+   for(const point of [A,B])svgEl('circle',{cx:point.x,cy:point.y,r:2.8,class:'wire-end'},cable);
+   const labels=badges.get(link.id);
+   drawPortBadge(cable,labelPort(a,link.aPort),labels?.a);
+   drawPortBadge(cable,labelPort(b,link.bPort),labels?.b);
    svgEl('title',{},cable).textContent=updateCableTip(link,a,b);
-   const hit=svgEl('line',{x1:A.x,y1:A.y,x2:B.x,y2:B.y,class:'cable-hit'},cable);
-   hit.addEventListener('contextmenu',e=>{if(state.mode==='pan'||state.spaceHeld){e.preventDefault();return;}e.preventDefault();e.stopPropagation();showContext(e.clientX,e.clientY,[{label:'Изменить интерфейсы / устройство',icon:'⚙',action:()=>showCableInfo(link,a,b)},{label:'Состояние: '+linkLabel(link.status),icon:'●',disabled:true},{separator:true},{label:`Отключить ${labelPort(a,link.aPort)} ↔ ${labelPort(b,link.bPort)}`,icon:'✕',destructive:true,action:()=>removeLink(link)}]);});
+   const hit=svgEl('path',{d:`M ${A.x} ${A.y} L ${B.x} ${B.y}`,class:'cable-hit'},cable);
+   hit.addEventListener('contextmenu',e=>{if(state.mode==='pan'||state.spaceHeld){e.preventDefault();return;}e.preventDefault();e.stopPropagation();showContext(e.clientX,e.clientY,[{label:'Изменить интерфейсы / устройство',icon:'⚙',action:()=>showCableInfo(link,a,b)},{label:'Оформление кабеля',icon:'◉',action:()=>showCableStyle(link)},{label:'Состояние: '+linkLabel(link.status),icon:'●',disabled:true},{separator:true},{label:`Отключить ${labelPort(a,link.aPort)} ↔ ${labelPort(b,link.bPort)}`,icon:'✕',destructive:true,action:()=>removeLink(link)}]);});
    hit.addEventListener('dblclick',e=>{e.stopPropagation();showCableInfo(link,a,b);});
  }
 }
@@ -754,6 +764,22 @@ function showPortStyle(node){
 function showRename(node){const lab=currentLab(),wrap=el('div');wrap.innerHTML=`<form><div class="modal-body"><div class="field"><label>Название устройства</label><input name="name" maxlength="80" required value="${escapeHTML(node.name)}"/></div></div><div class="modal-footer"><button type="button" class="secondary cancel">Отмена</button><button type="submit" class="primary">Сохранить</button></div></form>`;
  $('.cancel',wrap).onclick=hideModal;showModal('Переименовать устройство',wrap,async data=>{const result=await request(`labs/${lab.id}/nodes/${node.id}`,{method:'PATCH',body:json({name:data.get('name')})});if(result){await refresh();return true;}return false;});}
 async function deleteNode(node){const lab=currentLab();if(!confirm(`Удалить «${node.name}» вместе с соединениями?`))return;const ok=await request(`labs/${lab.id}/nodes/${node.id}`,{method:'DELETE'});if(ok){state.selectedNode=null;refresh();}}
+function showCableStyle(link){
+ const lab=currentLab(),wrap=el('div');
+ const color=/^#[0-9a-fA-F]{6}$/.test(link.color||'')?link.color:'#4e88bf';
+ wrap.innerHTML=`<form><div class="modal-body">
+ <div class="field"><label>Цвет линии</label><input type="color" name="color" value="${color}"/></div>
+ <div class="form-grid"><div class="field"><label>Тип линии</label><select name="lineStyle"><option value="solid">Сплошная</option><option value="dashed">Пунктир</option><option value="dotted">Точки</option></select></div>
+ <div class="field"><label>Толщина</label><select name="lineWidth">${[1,2,3,4].map(v=>`<option value="${v}">${v} px</option>`).join('')}</select></div></div>
+ <small class="muted">Оформление влияет только на топологию и PNG-снимок, не на сетевое соединение или состояние интерфейсов.</small>
+ </div><div class="modal-footer"><button type="button" class="secondary cancel">Отмена</button><button type="submit" class="primary">Сохранить</button></div></form>`;
+ $('select[name=lineStyle]',wrap).value=link.lineStyle||'solid';$('select[name=lineWidth]',wrap).value=String(link.lineWidth||2);
+ $('.cancel',wrap).onclick=hideModal;
+ showModal('Оформление кабеля',wrap,async data=>{
+  const result=await request(`labs/${lab.id}/links/${link.id}`,{method:'PATCH',body:json({color:String(data.get('color')),lineStyle:String(data.get('lineStyle')),lineWidth:Number(data.get('lineWidth'))})});
+  if(result){await refresh();return true;}return false;
+ });
+}
 async function removeLink(link){const lab=currentLab();if(!confirm('Отсоединить кабель? Если узлы работают, сеть между ними будет немедленно разорвана.'))return;const ok=await request(`labs/${lab.id}/links/${link.id}`,{method:'DELETE'});if(ok){refresh();toast('Кабель отключён');}}
 function showCableInfo(link,a,b){
  const lab=currentLab(),wrap=el('div');
