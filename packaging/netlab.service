@@ -1,0 +1,35 @@
+[Unit]
+Description=NetLab network emulation API
+Documentation=file:/opt/netlab/README.md
+Wants=network-online.target
+After=network-online.target openvswitch-switch.service
+Requires=openvswitch-switch.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/netlab/netlab.env
+WorkingDirectory=/opt/netlab
+ExecStart=/usr/local/bin/netlab -listen 127.0.0.1:8080 -data /var/lib/netlab -web /opt/netlab/web
+Restart=on-failure
+RestartSec=3s
+# Root is required for TAP and OVS orchestration. QEMU processes run as netlab-vm.
+User=root
+Group=root
+UMask=0027
+# Go spawns QEMU with syscall.Credential (root -> netlab-vm).
+# Preserve CAP_SETUID in the daemon across exec; other sandboxing stays active.
+AmbientCapabilities=CAP_SETUID
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/netlab
+ProtectKernelTunables=true
+ProtectControlGroups=true
+LockPersonality=true
+LimitNOFILE=65535
+TimeoutStopSec=15s
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="color-scheme" content="light"/>
+<title>NetLab — Network Topology</title>
+<link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="logo"><span class="logo-mark">N</span><div><strong>NetLab</strong><small>Network emulation</small></div></div>
+    <div class="side-section-caption">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+    <nav class="nav">
+      <button class="nav-item active" data-view="labs"><span class="ico">▦</span> Лаборатории <span id="labCount" class="count"></span></button>
+      <button class="nav-item" data-view="images"><span class="ico">▤</span> Образы <span id="imageCount" class="count"></span></button>
+      <button class="nav-item" data-view="system"><span class="ico">⚙</span> Система</button>
+    </nav>
+    <div class="side-labs">
+      <div class="side-heading"><span>МОИ ЛАБОРАТОРИИ</span><button id="quickNew" title="Создать лабораторию">＋</button></div>
+      <div id="labList" class="lab-list"></div>
+    </div>
+    <div class="sidebar-footer"><span class="online-dot"></span> NetLab Core <span class="muted">v0.6.3</span></div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div class="breadcrumbs"><span>Workspace</span><span class="slash">/</span><strong id="pageTitle">Лаборатории</strong></div>
+      <div class="header-right"><span id="serverHealth" class="pill muted-pill">● Проверка сервера</span><button id="signOut" class="ghost small">Сменить токен</button></div>
+    </header>
+    <div id="viewLabs" class="view">
+      <div class="workspace-header"><div><h1 id="labTitle">Лаборатории</h1><p id="labSubtitle">Создайте лабораторию и добавьте виртуальные устройства</p></div><div class="actions"><button id="newLab" class="secondary">＋ Новая лаборатория</button><button id="startAll" class="primary lab-action" disabled><span aria-hidden="true">▷</span> Запустить всё</button><button id="stopAll" class="secondary lab-action" disabled><span aria-hidden="true">▢</span> Остановить</button><button id="snapshotLab" class="secondary lab-action" disabled title="Сохранить топологию целиком как PNG"><span aria-hidden="true">◷</span> Снимок</button><span class="lab-action-separator" aria-hidden="true"></span><button id="labMore" class="secondary lab-menu-button lab-action" title="Действия с лабораторией" aria-label="Действия с лабораторией">⋯</button></div></div>
+      <div id="noLab" class="empty-state"><div class="empty-icon">◇</div><h2>Создайте первую лабораторию</h2><p>Добавьте QEMU-образы и собирайте топологии как в EVE-NG и GNS3.</p><button id="emptyNew" class="primary">＋ Создать лабораторию</button></div>
+      <div id="labWorkspace" class="workspace hidden">
+        <div class="workarea">
+          <aside class="device-explorer" id="deviceExplorer" aria-label="Устройства лаборатории">
+            <div class="explorer-heading"><strong>Устройства</strong><span id="explorerCount" class="explorer-count">0</span><button type="button" id="explorerAdd" title="Добавить устройство" aria-label="Добавить устройство">＋</button></div>
+            <label class="explorer-search"><span aria-hidden="true">⌕</span><input id="explorerSearch" type="search" autocomplete="off" placeholder="Поиск устройств" aria-label="Поиск устройств"></label>
+            <div class="explorer-columns"><span>ИМЯ / ОБРАЗ</span><span>СТАТУС</span></div>
+            <div class="explorer-groups" id="explorerGroups"></div>
+            <button class="explorer-add-bottom" id="explorerAddBottom" type="button"><span>＋</span><span><strong>Добавить устройство</strong><small>или перетащите на поле</small></span></button>
+          </aside>
+          <div class="canvas-viewport" id="canvasViewport">
+            <div class="canvas-toolbar" id="canvasToolbar" role="toolbar" aria-label="Инструменты редактора">
+              <button id="selectTool" class="canvas-tool selected" title="Выбор и перемещение (V)" aria-label="Выбор и перемещение"><svg viewBox="0 0 24 24"><path d="M5 3L18 13l-7 1-3 7z"/></svg></button>
+              <button id="panTool" class="canvas-tool" title="Перемещение полотна (H / Space)" aria-label="Перемещение полотна"><svg viewBox="0 0 24 24"><path d="M8 13V6a2 2 0 0 1 4 0v5-7a2 2 0 0 1 4 0v7-4a2 2 0 0 1 4 0v8c0 4-3 6-7 6h-2c-3 0-5-2-7-5l-2-3a2 2 0 0 1 3-2z"/></svg></button>
+              <button id="linkTool" class="canvas-tool" title="Соединение устройств (C)" aria-label="Соединить устройства"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg></button>
+              <span class="canvas-tool-divider"></span>
+              <button id="marqueeTool" class="canvas-tool" title="Выделить несколько устройств рамкой (M)" aria-label="Выделение рамкой"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1" stroke-dasharray="3 3"/></svg></button>
+              <button id="textTool" class="canvas-tool" title="Добавить текст на поле (T)" aria-label="Добавить текст"><svg viewBox="0 0 24 24"><path d="M4 6h16M12 6v14M8 20h8"/></svg></button>
+              <button id="noteTool" class="canvas-tool" title="Добавить примечание (N)" aria-label="Добавить примечание"><svg viewBox="0 0 24 24"><path d="M4 4h16v11l-5 5H4zM15 20v-5h5"/></svg></button>
+              <span class="canvas-tool-divider"></span>
+              <button id="addNodeBtn" class="canvas-tool add-device-tool" title="Добавить устройство (+)" aria-label="Добавить устройство"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+            </div>
+            <div class="canvas-zoom" aria-label="Масштаб полотна">
+              <button id="zoomOut" title="Уменьшить" aria-label="Уменьшить">−</button>
+              <button id="zoomReset" title="Масштаб 100%"><span id="zoomValue">100%</span></button>
+              <button id="zoomIn" title="Увеличить" aria-label="Увеличить">＋</button>
+              <button id="zoomFit" title="Показать всё" aria-label="Показать всё">⛶</button>
+              <button id="toggleInspector" title="Скрыть/показать свойства устройства" aria-label="Показать/скрыть свойства">▤</button>
+            </div>
+            <div id="marqueeRect" class="marquee-rect hidden"></div>
+            <!-- Pan stays in an unscaled layer; CSS zoom rerenders crisp text and SVG labels. -->
+            <div id="stagePosition" class="stage-position">
+              <div id="stage" class="stage">
+              <svg id="linkLayer" class="links" width="3000" height="2000" aria-label="Топология"></svg>
+              <div id="annotationsLayer"></div>
+              <div id="nodesLayer"></div>
+              <div id="stageEmpty" class="stage-empty">Нажмите «+», чтобы добавить первое устройство. Двойной щелчок — добавление на поле.</div>
+              </div>
+            </div>
+          </div>
+          <aside class="inspector" id="inspector">
+            <div id="inspectorEmpty" class="inspector-empty"><span class="empty-select-icon">▣</span><strong>Устройство не выбрано</strong><p>Нажмите на устройство в топологии, чтобы посмотреть его параметры и интерфейсы.</p></div>
+            <div id="inspectorContent" class="hidden">
+              <div class="device-head"><div id="inspectorDeviceName">СВОЙСТВА УСТРОЙСТВА</div></div>
+              <nav class="inspector-tabs" aria-label="Сведения об устройстве">
+                <button id="overviewTab" class="active" aria-selected="true">Обзор</button><button id="interfacesTab" aria-selected="false">Интерфейсы</button>
+              </nav>
+              <div class="inspector-scroll"><div id="overviewPane"></div><div id="interfacesPane" class="hidden"></div></div>
+            </div>
+          </aside>
+        </div>
+        <footer class="workspace-footer" aria-label="Состояние лаборатории и сервера">
+          <span id="serverConnection" class="status-connection"><i class="telemetry-dot"></i> Подключение к серверу…</span>
+          <span id="hostCPU">CPU —</span>
+          <span id="hostRAM">RAM —</span>
+          <span id="labDevices">0 устройств</span>
+          <span id="labLinks">0 соединений</span>
+          <span id="apiLatency">Задержка —</span>
+          <span id="lastSaved">Последнее сохранение —</span>
+          <span class="editor-hint-sr" id="editorHint" aria-live="polite">Режим выбора</span>
+        </footer>
+      </div>
+    </div>
+    <div id="viewImages" class="view hidden"><div class="workspace-header"><div><h1>Библиотека образов</h1><p>Загружайте автономные образы QCOW2 и RAW</p></div><label class="primary upload-btn" for="imageFile">⬆ Загрузить образ</label><input type="file" id="imageFile" hidden accept=".qcow2,.img,.raw,.qcow"/></div><div class="content-wrap"><div class="notice">На первом этапе доступны только QEMU x86_64 и диски QCOW2/RAW. ISO, VMDK, Dynamips и Cisco IOL — в следующих релизах. Образы в комплект не включены.</div><div id="imagesTable" class="table-card"></div></div></div>
+    <div id="viewSystem" class="view hidden"><div class="workspace-header"><div><h1>Состояние системы</h1><p>Проверка готовности Debian 13 к эмуляции</p></div><button id="refreshSystem" class="secondary">↻ Обновить</button></div><div id="systemCards" class="status-grid content-wrap"></div><div class="content-wrap system-advice"><h3>Безопасный доступ</h3><p>API по умолчанию слушает только <code>127.0.0.1:8080</code>. Для доступа с другого компьютера используйте SSH-туннель, а для публикации HTTPS — отдельный настроенный reverse proxy с дополнительной аутентификацией.</p></div></div>
+  </main>
+</div>
+<div id="modalBackdrop" class="modal-backdrop hidden"><div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><h2 id="modalTitle"></h2><button id="closeModal" class="icon-btn">✕</button></div><div id="modalContent"></div></div></div>
+<div id="consoleBackdrop" class="console-backdrop hidden"><section class="console-window"><div class="console-header"><div><span class="terminal-symbol">›_</span> <strong id="consoleTitle">Serial Console</strong><span class="console-label">SERIAL</span></div><button id="closeConsole" class="icon-btn">✕</button></div><pre id="consoleOutput" tabindex="0">Подключение к консоли...</pre><form id="consoleForm"><span>›</span><input id="consoleInput" autocomplete="off" spellcheck="false" placeholder="Введите команду и нажмите Enter"/><button type="submit" class="primary small">Отправить ↵</button></form></section></div>
+<div id="loginBackdrop" class="login-backdrop hidden"><div class="login-card"><div class="login-logo">N<span>●</span></div><h1>Добро пожаловать в NetLab</h1><p>Введите административный токен, созданный установщиком. Без него управление виртуальными машинами заблокировано.</p><form id="loginForm"><label for="tokenInput">Административный токен</label><input type="password" id="tokenInput" autocomplete="off" placeholder="NETLAB_ADMIN_TOKEN" required minlength="24"/><button class="primary" type="submit">Войти в NetLab</button></form><small>Первый запуск: токен задаётся через переменную NETLAB_ADMIN_TOKEN.</small></div></div>
+<div id="canvasContext" class="context-menu hidden" role="menu"></div>
+<div id="iconPickerBackdrop" class="modal-backdrop icon-picker-backdrop hidden"><section class="icon-picker-window" role="dialog" aria-modal="true" aria-label="Библиотека иконок"><header class="icon-picker-head"><div><strong>Выбор значка устройства</strong><p id="iconPickerCount" class="muted">Загрузка…</p></div><button id="closeIconPicker" class="icon-btn" title="Закрыть">✕</button></header><div class="icon-picker-tools"><input id="iconSearch" type="search" placeholder="Поиск по названию (Router, Switch, Server…)"/><div id="iconCategories" class="icon-categories"></div></div><div id="iconGrid" class="icon-grid"></div></section></div>
+<div id="toast" class="toast hidden"></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
