@@ -1,0 +1,91 @@
+import { defineStore } from 'pinia'
+import { computed, ref } from 'vue'
+import { api, json } from '@/api/client'
+import type { Cable, Device, ImageRecord, Lab, Template, HostSystem } from '@/types'
+
+export const useNetlabStore = defineStore('netlab', () => {
+  const token = ref(sessionStorage.getItem('netlabToken') || '')
+  const labs = ref<Lab[]>([])
+  const images = ref<ImageRecord[]>([])
+  const templates = ref<Template[]>([])
+  const system = ref<HostSystem>({})
+  const labID = ref<string | null>(null)
+  const selectedID = ref<string | null>(null)
+  const busy = ref(false)
+  const failure = ref('')
+  const live = ref(false)
+  const activeLab = computed(() => labs.value.find(l => l.id === labID.value) || null)
+  const selectedNode = computed(() => activeLab.value?.nodes.find(n => n.id === selectedID.value) || null)
+  const current = () => { const l = activeLab.value; if (!l) throw Error('Сначала выберите лабораторию'); return l }
+  async function action<T>(fn: () => Promise<T>): Promise<T> {
+    failure.value = ''
+    try { return await fn() } catch (e) { failure.value = (e as Error).message; throw e }
+  }
+  function authenticate(value: string) { token.value = value.trim(); sessionStorage.setItem('netlabToken', token.value) }
+  function logout() { authenticate(''); labs.value = []; labID.value = null; selectedID.value = null }
+  async function refresh() {
+    if (!token.value) return
+    await action(async () => {
+      const result = await api<Lab[]>(token.value, 'labs')
+      labs.value = result
+      if (!labID.value || !result.some(l=>l.id===labID.value)) labID.value = result[0]?.id ?? null
+      if (selectedID.value && !activeLab.value?.nodes.some(n=>n.id===selectedID.value)) selectedID.value = null
+      live.value = true
+    }).catch(() => { live.value = false })
+  }
+  async function bootstrap() {
+    busy.value = true
+    try {
+      await refresh()
+      if (!live.value) return
+      const [imgs, tpls, sys] = await Promise.all([
+        api<ImageRecord[]>(token.value,'images'), api<Template[]>(token.value,'templates'),
+        api<HostSystem>(token.value,'system')
+      ])
+      images.value = imgs; templates.value = tpls; system.value = sys
+    } catch(e) { failure.value = (e as Error).message }
+    finally { busy.value = false }
+  }
+  async function createLab(name: string) {
+    const item = await action(()=>api<Lab>(token.value,'labs',{method:'POST',body:json({name})}))
+    await refresh(); labID.value = item.id
+  }
+  async function renameLab(name: string) {
+    await action(()=>api<Lab>(token.value,`labs/${current().id}`,{method:'PATCH',body:json({name})})); await refresh()
+  }
+  async function addNode(payload: Partial<Device>) {
+    const lab = current()
+    await action(()=>api<Device>(token.value,`labs/${lab.id}/nodes`,{method:'POST',body:json(payload)})); await refresh()
+  }
+  async function moveNode(id: string, x: number, y: number) {
+    const lab = current()
+    await action(()=>api<Device>(token.value,`labs/${lab.id}/nodes/${id}`,{method:'PATCH',body:json({x: Math.round(x), y: Math.round(y)})}))
+    await refresh()
+  }
+  async function nodePower(id: string, operation: 'start' | 'stop') {
+    await action(()=>api<unknown>(token.value,`labs/${current().id}/nodes/${id}/${operation}`,{method:'POST'})); await refresh()
+  }
+  async function renameNode(id: string, name: string) {
+    const lab = current()
+    await action(()=>api<Device>(token.value,`labs/${lab.id}/nodes/${id}`,{method:'PATCH',body:json({name})})); await refresh()
+  }
+  async function removeNode(id: string) {
+    const lab = current()
+    await action(()=>api<unknown>(token.value,`labs/${lab.id}/nodes/${id}`,{method:'DELETE'})); await refresh()
+  }
+  async function connect(a: string, b: string, aPort: number, bPort: number) {
+    await action(()=>api<Cable>(token.value,`labs/${current().id}/links`,{method:'POST',body:json({a,b,aPort,bPort})})); await refresh()
+  }
+  async function disconnect(id: string) {
+    await action(()=>api<unknown>(token.value,`labs/${current().id}/links/${id}`,{method:'DELETE'})); await refresh()
+  }
+  async function updateCable(id: string, payload: Partial<Cable>) {
+    await action(()=>api<Cable>(token.value,`labs/${current().id}/links/${id}`,{method:'PATCH',body:json(payload)})); await refresh()
+  }
+  async function labPower(operation: 'start' | 'stop') {
+    await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
+  }
+  return {token,labs,images,templates,system,labID,selectedID,busy,failure,live,activeLab,selectedNode,
+    authenticate,logout,refresh,bootstrap,createLab,renameLab,addNode,moveNode,nodePower,renameNode,
+    removeNode,connect,disconnect,updateCable,labPower}
+})
