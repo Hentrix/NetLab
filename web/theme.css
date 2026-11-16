@@ -263,3 +263,36 @@
 :root[data-theme="dark"] * { scrollbar-color: #4b6072 #202a34; }
 /* The console is deliberately terminal-dark in both themes, including its tabs. */
 @media(max-width:620px) { .theme-toggle-label { display: none; } .theme-toggle { padding: 6px 9px; } }
+
+/* Native select stays in the DOM for form submission/validation; this trigger
+   and listbox provide a consistent dropdown in both NetLab themes. */
+.nl-dropdown {position:relative;display:block;min-width:0;width:100%;}
+.nl-dropdown-native {position:absolute!important;width:1px!important;height:1px!important;min-width:0!important;opacity:0!important;pointer-events:none!important;padding:0!important;margin:0!important;border:0!important;}
+.nl-dropdown-trigger {display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-width:0;min-height:37px;border:1px solid #c4d0d8;background:#fff;color:#253847;border-radius:5px;padding:8px 10px;font:inherit;cursor:pointer;text-align:left;transition:border-color .12s,box-shadow .12s;}
+.nl-dropdown-trigger:hover {border-color:#91b1ca;background:#f9fbfd;}
+.nl-dropdown-trigger:focus-visible,.nl-dropdown-trigger.is-open {outline:0;border-color:#4b8ba9;box-shadow:0 0 0 2px #4b8ba923;}
+.nl-dropdown-trigger:disabled {opacity:.55;cursor:not-allowed;}
+.nl-dropdown-value {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.nl-dropdown-chevron {display:grid;place-items:center;flex:0 0 15px;color:#75899a;}
+.nl-dropdown-chevron svg {display:block;width:15px;height:15px;transition:transform .15s ease;}
+.nl-dropdown-trigger.is-open .nl-dropdown-chevron svg {transform:rotate(180deg);}
+.nl-dropdown-popup {position:fixed;z-index:110;display:flex;flex-direction:column;box-sizing:border-box;max-height:300px;min-width:185px;padding:5px;border:1px solid #cbd8e2;border-radius:7px;background:#fff;color:#30465b;box-shadow:0 12px 35px #162c3a30;}
+.nl-dropdown-popup[hidden] {display:none!important;}
+.nl-dropdown-search {flex:0 0 auto;min-height:34px;padding:7px 9px;margin-bottom:4px;width:100%;box-sizing:border-box;border:1px solid #cfdae2;border-radius:5px;background:#f8fafc;color:#253847;font:inherit;outline:none;}
+.nl-dropdown-search[hidden] {display:none!important;}
+.nl-dropdown-search:focus {border-color:#5b91ba;}
+.nl-dropdown-options {display:grid;gap:1px;overflow-y:auto;overscroll-behavior:contain;min-height:0;}
+.nl-dropdown-option {display:block;width:100%;padding:8px 10px;border:0;border-radius:4px;color:inherit;text-align:left;font:inherit;background:transparent;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.nl-dropdown-option:hover,.nl-dropdown-option.is-highlighted {background:#eaf2fa;color:#255b88;}
+.nl-dropdown-option.is-selected {background:#e1edf8;color:#285b85;font-weight:600;}
+.nl-dropdown-option:disabled {opacity:.45;cursor:not-allowed;}
+.nl-dropdown-empty {padding:12px;text-align:center;color:#82909e;font-size:12px;}
+:root[data-theme="dark"] .nl-dropdown-trigger {background:#2a3947;color:#e0e8f0;border-color:#435769;}
+:root[data-theme="dark"] .nl-dropdown-trigger:hover {background:#344555;border-color:#67839c;}
+:root[data-theme="dark"] .nl-dropdown-trigger:focus-visible,:root[data-theme="dark"] .nl-dropdown-trigger.is-open {border-color:#80a9ce;box-shadow:0 0 0 2px #78a5ce38;}
+:root[data-theme="dark"] .nl-dropdown-chevron {color:#afc4d7;}
+:root[data-theme="dark"] .nl-dropdown-popup {background:#25313e;color:#dce8f3;border-color:#45596b;box-shadow:0 16px 42px #06111bcc;}
+:root[data-theme="dark"] .nl-dropdown-search {background:#1e2b36;color:#e0edf9;border-color:#4b6376;}
+:root[data-theme="dark"] .nl-dropdown-option:hover,:root[data-theme="dark"] .nl-dropdown-option.is-highlighted {background:#344e65;color:#edf7ff;}
+:root[data-theme="dark"] .nl-dropdown-option.is-selected {background:#35546e;color:#f1faff;}
+:root[data-theme="dark"] .nl-dropdown-empty {color:#94aabb;}

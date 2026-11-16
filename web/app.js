@@ -8,6 +8,7 @@ import {selectionForContextMenu,shouldClearCanvasSelection} from './context-sele
 import {translateSelection,worldCoordinates} from './canvas-coordinates.mjs';
 import {ConsoleWorkspace} from './console-manager.mjs';
 import {initThemeToggle} from './theme.mjs';
+import {enhanceDropdowns} from './custom-dropdown.mjs';
 const $ = (q, root = document) => root.querySelector(q);
 const el = (tag, cls = '', text = '') => { const item = document.createElement(tag); if (cls) item.className = cls; item.textContent = text; return item; };
 const state = {token: sessionStorage.getItem('netlabToken') || '', labs: [], images: [], templates: [], selectedLab: null, selectedNode: null, view: 'labs', mode: 'select', linkFrom: null, console: null, poller: null, zoom: 1, panX: 80, panY: 50, spaceHeld: false, contextNode: null, iconCatalogue: [], iconLoaded: false, placement: null, linkPort: null, dragging: false, linkDrag: null, selectedNodes: new Set(), inspectorTab: 'overview', annotationDrag: false, collapsedGroups: new Set(), explorerQuery: '', telemetry: null};
@@ -47,7 +48,25 @@ function iconFor(node) {
   if (/nexus/i.test(node.name||'')) return 'Nexus7K.png';
   return DEFAULT_ICONS[kind] || DEFAULT_ICONS.router;
 }
-function iconImage(name, cls='icon-image') { const img = document.createElement('img'); img.className=cls; img.src=iconURL(name); img.alt=''; img.loading='lazy'; img.draggable=false; return img; }
+const iconThumbnailObserver = typeof IntersectionObserver !== 'undefined' ? new IntersectionObserver(entries=>{
+  for (const entry of entries) if(entry.isIntersecting){
+    const image=entry.target;
+    if(image.dataset.src) image.src=image.dataset.src;
+    delete image.dataset.src;
+    iconThumbnailObserver.unobserve(image);
+  }
+},{rootMargin:'180px'}) : null;
+function iconImage(name, cls='icon-image') {
+  const img = document.createElement('img'); img.className=cls; img.alt='';
+  img.decoding='async';img.draggable=false;
+  // Visible topology icons load immediately. The 550-image icon picker is
+  // virtualized with IntersectionObserver instead of Chrome's native lazy
+  // image placeholders, which can defer load events on zoomed canvases.
+  if(cls==='icon-choice-image' && iconThumbnailObserver){
+    img.dataset.src=iconURL(name);iconThumbnailObserver.observe(img);
+  }else{img.src=iconURL(name);}
+  return img;
+}
 async function ensureIcons() {
  if (state.iconLoaded) return;
  try {const r=await fetch('/icons.json',{cache:'no-store'});if (!r.ok) throw Error('icons.json');const list=await r.json();state.iconCatalogue=Array.isArray(list)?list:[];state.iconLoaded=true;}
@@ -851,8 +870,8 @@ function openIconPicker(initial,callback){
  const backdrop=$('#iconPickerBackdrop'),search=$('#iconSearch'),cats=$('#iconCategories'),grid=$('#iconGrid'),count=$('#iconPickerCount');
  let cat='all';search.value='';backdrop.classList.remove('hidden');
  const categories=[['all','Все'],['router','Маршрутизаторы'],['switch','Коммутаторы'],['firewall','Безопасность'],['server','Серверы'],['pc','ПК'],['cloud','Облака'],['other','Прочее']];
- function draw(){const q=search.value.toLowerCase().trim();grid.replaceChildren();const matched=state.iconCatalogue.filter(i=>(cat==='all'||iconCategory(i)===cat)&&i.toLowerCase().includes(q));count.textContent=`${matched.length} значков`;
-  for(const filename of matched){const btn=el('button','icon-choice'+(filename===initial?' active':''));btn.title=filename;btn.append(iconImage(filename),el('span','',filename.replace(/\.png$/i,'')));
+ function draw(){const q=search.value.toLowerCase().trim();iconThumbnailObserver?.disconnect();grid.replaceChildren();const matched=state.iconCatalogue.filter(i=>(cat==='all'||iconCategory(i)===cat)&&i.toLowerCase().includes(q));count.textContent=`${matched.length} значков`;
+  for(const filename of matched){const btn=el('button','icon-choice'+(filename===initial?' active':''));btn.title=filename;btn.append(iconImage(filename,'icon-choice-image'),el('span','',filename.replace(/\.png$/i,'')));
    btn.onclick=()=>{backdrop.classList.add('hidden');callback(filename);};grid.append(btn);}
  }
  cats.replaceChildren();for(const [id,label] of categories){const b=el('button',id===cat?'active':'',label);b.onclick=()=>{cat=id;for(const x of cats.children)x.classList.toggle('active',x===b);draw();};cats.append(b);}
@@ -995,4 +1014,4 @@ async function pollLabStatus(){
   if(state.selectedNode&&(statusChanged||wiresChanged))renderDetails(lab);
  }catch(e){/* status refresh is best-effort; API errors shown by explicit actions */}
 }
-bind();setInterval(pollLabStatus,3000);setInterval(()=>{if(state.token)refreshTelemetry();},5000);if(state.token)boot();else showLogin();
+enhanceDropdowns();bind();setInterval(pollLabStatus,3000);setInterval(()=>{if(state.token)refreshTelemetry();},5000);if(state.token)boot();else showLogin();
