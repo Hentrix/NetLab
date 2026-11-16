@@ -615,6 +615,66 @@ async function openLog(node){const lab=currentLab();if(!lab)return;const respons
 function showLogin(){$('#loginBackdrop').classList.remove('hidden');}
 function hideLogin(){$('#loginBackdrop').classList.add('hidden');}
 async function boot(){try{const resp=await api('labs');state.labs=resp;hideLogin();await refresh();await refreshSystem();await refreshTelemetry();}catch{showLogin();}}
+async function startSelectedNodes(){
+ const lab=currentLab(), ids=[...state.selectedNodes]; if(!lab||!ids.length)return;
+ let ok=0, failed=[];
+ for(const id of ids){ const node=lab.nodes.find(n=>n.id===id); if(!node||node.status==='running')continue; const result=await request(`labs/${lab.id}/nodes/${id}/start`,{method:'POST'}); if(result) ok++; else failed.push(node?.name||id); }
+ await refresh();
+ if(ok) toast(`Запущено устройств: ${ok}`);
+ if(failed.length) toast(`Не удалось запустить: ${failed.slice(0,3).join(', ')}${failed.length>3?'…':''}`,true);
+}
+async function stopSelectedNodes(){
+ const lab=currentLab(), ids=[...state.selectedNodes]; if(!lab||!ids.length)return;
+ let ok=0, failed=[];
+ for(const id of ids){ const node=lab.nodes.find(n=>n.id===id); if(!node||node.status!=='running')continue; const result=await request(`labs/${lab.id}/nodes/${id}/stop`,{method:'POST'}); if(result) ok++; else failed.push(node?.name||id); }
+ await refresh();
+ if(ok) toast(`Остановлено устройств: ${ok}`);
+ if(failed.length) toast(`Не удалось остановить: ${failed.slice(0,3).join(', ')}${failed.length>3?'…':''}`,true);
+}
+async function deleteSelectedNodes(){
+ const lab=currentLab(), ids=[...state.selectedNodes]; if(!lab||!ids.length)return;
+ const picked=lab.nodes.filter(n=>ids.includes(n.id));
+ const running=picked.filter(n=>n.status==='running');
+ if(running.length){ toast('Сначала остановите выбранные запущенные устройства',true); return; }
+ if(!confirm(`Удалить выбранные устройства (${picked.length}) вместе с соединениями?`)) return;
+ let ok=0, failed=[];
+ for(const node of picked){ const result=await request(`labs/${lab.id}/nodes/${node.id}`,{method:'DELETE'}); if(result) ok++; else failed.push(node.name); }
+ state.selectedNode=null; state.selectedNodes.clear();
+ await refresh();
+ if(ok) toast(`Удалено устройств: ${ok}`);
+ if(failed.length) toast(`Не удалось удалить: ${failed.slice(0,3).join(', ')}${failed.length>3?'…':''}`,true);
+}
+async function autoAlignSelection(){
+ const lab=currentLab(), ids=[...state.selectedNodes]; if(!lab||ids.length<2) return;
+ const nodes=lab.nodes.filter(n=>ids.includes(n.id));
+ if(nodes.length<2) return;
+ const sorted=[...nodes].sort((a,b)=>a.y===b.y?a.x-b.x:a.y-b.y);
+ const left=Math.min(...sorted.map(n=>n.x)), top=Math.min(...sorted.map(n=>n.y));
+ const cols=Math.max(1, Math.ceil(Math.sqrt(sorted.length)));
+ const gapX=185, gapY=150;
+ let moved=0;
+ for(let i=0;i<sorted.length;i++){
+   const row=Math.floor(i/cols), col=i%cols;
+   const x=left + col*gapX, y=top + row*gapY;
+   const node=sorted[i];
+   if(node.x===x && node.y===y) continue;
+   const result=await request(`labs/${lab.id}/nodes/${node.id}`,{method:'PATCH',body:json({x,y})});
+   if(result) moved++;
+ }
+ await refresh();
+ toast(moved?`Автовыравнивание выполнено (${sorted.length} узл.)`:'Узлы уже выровнены');
+}
+function showSelectionContext(x,y){
+ const lab=currentLab(), ids=[...state.selectedNodes], nodes=lab?lab.nodes.filter(n=>ids.includes(n.id)):[];
+ const running=nodes.filter(n=>n.status==='running').length;
+ showContext(x,y,[
+  {icon:'▶',label:`Включить все (${nodes.length})`,disabled:!nodes.length||running===nodes.length,action:startSelectedNodes},
+  {icon:'■',label:`Остановить все (${nodes.length})`,disabled:!nodes.length||running===0,action:stopSelectedNodes},
+  {icon:'≋',label:'Автовыравнивание',disabled:nodes.length<2,action:autoAlignSelection},
+  {separator:true},
+  {icon:'✕',label:`Удалить все (${nodes.length})`,destructive:true,disabled:!nodes.length||running>0,action:deleteSelectedNodes}
+ ]);
+}
 function showContext(x,y,items){
  const menu=$('#canvasContext');menu.replaceChildren();
  for(const item of items){if(item.separator){menu.append(el('div','context-divider'));continue;}
@@ -628,6 +688,7 @@ function showContext(x,y,items){
 function hideContext(){$('#canvasContext').classList.add('hidden');}
 function showNodeContext(x,y,node){
  const running=node.status==='running',lab=currentLab();
+ if(state.selectedNodes.size>1 && state.selectedNodes.has(node.id)) return showSelectionContext(x,y);
  showContext(x,y,[
   {icon:'›_',label:'Открыть консоль',disabled:!running,action:()=>openConsole(node)},
   {icon:running?'■':'▶',label:running?'Остановить':'Запустить',action:async()=>{await request(`labs/${lab.id}/nodes/${node.id}/${running?'stop':'start'}`,{method:'POST'});refresh();}},
@@ -739,7 +800,9 @@ function setupCanvas(){
  viewport.addEventListener('contextmenu',e=>{
   if(state.mode==='pan'||state.spaceHeld){e.preventDefault();return;}
   if(e.target.closest('.node,.cable-hit,.canvas-annotation,.canvas-toolbar,.canvas-zoom'))return;
-  e.preventDefault();const point=worldPoint(e.clientX,e.clientY);
+  e.preventDefault();
+  if(state.selectedNodes.size>1){showSelectionContext(e.clientX,e.clientY);return;}
+  const point=worldPoint(e.clientX,e.clientY);
   showContext(e.clientX,e.clientY,[
    {icon:'＋',label:'Добавить устройство сюда',action:()=>showNodeModal(state.templates[0],point)},
    {icon:'T',label:'Добавить текст',action:()=>showAnnotationDialog({kind:'text',text:'',...point,width:240,height:55})},
@@ -814,7 +877,10 @@ function bind(){
       const tool={KeyV:'select',KeyH:'pan',KeyC:'link',KeyM:'marquee',KeyT:'text',KeyN:'note'}[e.code];if(tool&&state.view==='labs')setMode(tool);
    }
    if(e.key==='Delete'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&!$('#modalBackdrop').classList.contains('hidden'))return;
-   if(e.key==='Delete'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&state.selectedNode&&state.view==='labs') {const n=currentNode();if(n)deleteNode(n);}
+   if(e.key==='Delete'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&state.view==='labs') {
+      if(state.selectedNodes.size>1){deleteSelectedNodes();}
+      else if(state.selectedNode){const n=currentNode();if(n)deleteNode(n);} 
+   }
   });
   document.addEventListener('keyup',e=>{if(e.code==='Space'){state.spaceHeld=false;$('#canvasViewport').classList.remove('space-pan');}});
 }

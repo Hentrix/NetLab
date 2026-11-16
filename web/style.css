@@ -36,8 +36,8 @@
 .device-illustration{height:72px;width:90px;display:flex;align-items:center;justify-content:center;pointer-events:none}
 .device-illustration .icon-image{max-width:84px;max-height:69px;width:auto;height:auto;object-fit:contain;filter:drop-shadow(0 2px 1px #202f3520);user-select:none;-webkit-user-drag:none}
 .device-caption{gap:4px;width:154px;max-width:154px;justify-content:center;line-height:1.3;font-size:11px;font-weight:600}
-.device-name{max-width:138px;background:#ffffffef;border:1px solid #ffffffbd;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;padding:1px 4px}
-.node.active .device-name{background:#e1effa}
+.device-name{max-width:138px;background:transparent;border:0;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;padding:1px 2px;text-shadow:0 1px 0 #fff,0 0 2px #fff,0 0 6px #fff}
+.node.active .device-name{text-shadow:0 1px 0 #fff,0 0 2px #fff,0 0 6px #fff}
 .device-status{background:#a9b3bc;width:7px;height:7px}
 .device-status.running{background:#1b9b64}
 .network-wire{stroke:#506979;stroke-width:2.1;stroke-linecap:round;pointer-events:none}
@@ -253,21 +253,21 @@
 
 /* v0.6 · equipment navigator, live telemetry and resizable rich annotations */
 .device-explorer{width:273px;flex:0 0 273px;min-height:0;background:#fff;border-right:1px solid #e1e8f0;display:flex;flex-direction:column;color:#2a3d55}
-.explorer-heading{display:flex;align-items:center;gap:10px;padding:23px 18px 17px}
+.explorer-heading{display:flex;align-items:center;gap:10px;padding:20px 18px 16px}
 .explorer-heading strong{font-size:16px;font-weight:680;letter-spacing:-.35px}
 .explorer-count{background:#eef2f8;padding:5px 9px;border-radius:8px;color:#6e819a;font-size:12px;font-weight:600}
-.explorer-heading button{margin-left:auto;color:#8396ac;background:transparent;border:0;border-radius:6px;font-size:24px;line-height:1;width:30px;height:30px}
+.explorer-heading button{margin-left:auto;color:#8396ac;background:#f1f5fb;border:1px solid #e1e8f0;border-radius:8px;font-size:24px;line-height:1;width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;padding:0}
 .explorer-heading button:hover{background:#edf3fd;color:#2f6bda}
 .explorer-search{display:flex;gap:8px;align-items:center;margin:0 13px 19px;padding:0 11px;height:42px;background:#f3f6fa;border-radius:8px;color:#8297af}
-.explorer-search>span{font-size:24px;line-height:1}
+.explorer-search>span{font-size:20px;line-height:1;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;transform:translateY(-1px)}
 .explorer-search input{width:100%;min-width:0;background:transparent;border:0;outline:0;font-size:12px;color:#2b3f58}
 .explorer-search input::placeholder{color:#91a2b6}
 .explorer-columns{display:flex;justify-content:space-between;padding:0 17px 10px;gap:8px;font-size:10px;font-weight:700;letter-spacing:.25px;color:#8799b1}
 .explorer-groups{overflow-y:auto;overflow-x:hidden;min-height:0;flex:1;padding:0 8px 5px}
 .explorer-group{margin-bottom:14px}
-.explorer-group-head{display:flex;width:100%;align-items:center;gap:9px;text-align:left;background:transparent;border:0;padding:13px 14px 12px;color:#7286a0;font-weight:500;font-size:12px;border-radius:5px}
+.explorer-group-head{display:flex;width:100%;align-items:center;gap:9px;text-align:left;background:transparent;border:0;padding:10px 14px 10px;color:#7286a0;font-weight:500;font-size:12px;border-radius:5px}
 .explorer-group-head:hover{background:#f3f6fb}
-.explorer-chevron{font-size:18px;line-height:10px;width:13px;text-align:center;color:#7890ab}
+.explorer-chevron{font-size:16px;line-height:1;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;color:#7890ab;transform:translateY(-1px)}
 .explorer-group-count{margin-left:auto;font-size:11px;color:#93a3b8}
 .explorer-device{position:relative;display:flex;align-items:center;gap:11px;width:100%;min-height:65px;padding:10px 10px 10px 12px;background:transparent;border:0;border-radius:7px;text-align:left;color:#263952;cursor:grab}
 .explorer-device:active{cursor:grabbing}
