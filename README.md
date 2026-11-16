@@ -1,8 +1,22 @@
-# NetLab v0.8.0 — начало миграции на Vue 3
+# NetLab v0.8.1 — исправление сборки Vue 3
 
 NetLab — сетевой эмулятор для Debian 13 Trixie. В основе — QEMU/KVM, Open vSwitch, Go API и браузерный редактор топологии.
 
 > Это MVP. Dynamips, Cisco IOL/IOU и контейнерные движки пока не реализованы; VPCS экспериментален; фактический запуск конкретных сетевых образов нужно проверять на целевом Debian.
+
+## Исправление сборки Vue v0.8.1
+
+В v0.8.0 TypeScript не находил локальные импорты `@/...`, потому что в `frontend/tsconfig.json` отсутствовала настройка `paths`; отдельно в API-клиенте не были импортированы типы `Device` и `Cable`. Оба недочёта устранены, как и отсутствующий импорт SVG-иконки закрытия. На GitHub Actions теперь проверяется `vue-tsc`, сборка Vite и тесты.
+
+Обновляйте frontend и устанавливайте приложение **только после успешной сборки**:
+
+```bash
+cd ~/NetLab
+git pull --ff-only
+bash scripts/build-frontend.sh && sudo bash scripts/install-debian13.sh
+```
+
+Если сборка завершилась с ошибкой, `sudo`-установщик **не запустится**; уже работающий старый интерфейс останется доступным. Предупреждение npm о `lucide-vue-next` не связано с ошибками TypeScript.
 
 ## Vue 3 + TypeScript: новый редактор (экспериментальный)
 
@@ -19,8 +33,7 @@ NetLab — сетевой эмулятор для Debian 13 Trixie. В осно�
 **Перед** установкой на Debian 13 или на машине разработчика с Node.js >= 20.19:
 
 ```bash
-bash scripts/build-frontend.sh
-sudo bash scripts/install-debian13.sh
+bash scripts/build-frontend.sh && sudo bash scripts/install-debian13.sh
 ```
 
 Скрипт сборки запускается **без sudo**, получает пакеты npm и создаёт `web/next/`. Установщик копирует готовые статические файлы в `/opt/netlab/web/next/`. Откройте `http://IP:8080/next/` (или `https://ваш-домен/next/`).

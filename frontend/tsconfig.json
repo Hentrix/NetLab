@@ -23,7 +23,13 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
     "jsx": "preserve",
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "src/*"
+      ]
+    }
   },
   "include": [
     "src/**/*.ts",

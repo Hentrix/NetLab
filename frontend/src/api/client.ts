@@ -1,3 +1,5 @@
+import type { Cable, Device } from '@/types'
+
 /** Same-origin API so SSH tunnel, reverse proxy and HTTPS need no separate CORS policy. */
 const API = '/api'
 export class ApiError extends Error {

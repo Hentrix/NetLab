@@ -1,0 +1,36 @@
+name: Vue frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'scripts/build-frontend.sh'
+      - '.github/workflows/frontend.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'scripts/build-frontend.sh'
+      - '.github/workflows/frontend.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Typecheck, Vite и тесты
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Установить зависимости
+        run: npm install --no-audit --no-fund
+        working-directory: frontend
+      - name: Проверить TypeScript и собрать Vue
+        run: npm run build
+        working-directory: frontend
+      - name: Запустить тесты
+        run: npm run test
+        working-directory: frontend

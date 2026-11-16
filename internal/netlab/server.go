@@ -55,7 +55,7 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		respond(w, 200, map[string]any{"status": "ok", "version": "0.8.0"})
+		respond(w, 200, map[string]any{"status": "ok", "version": "0.8.1"})
 	})
 	mux.Handle("/api/", s.auth(http.HandlerFunc(s.api)))
 	mux.Handle("/", http.FileServer(http.Dir(s.web)))

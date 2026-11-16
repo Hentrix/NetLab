@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { LayoutDashboard, HardDrive, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, Github, Pencil, LogOut } from 'lucide-vue-next'
+import { LayoutDashboard, HardDrive, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, Github, Pencil, LogOut, X } from 'lucide-vue-next'
 import { useNetlabStore } from '@/stores/netlab'
 import { portLabel } from '@/api/client'
 import type { Device, Template } from '@/types'

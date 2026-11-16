@@ -13,9 +13,8 @@
 Разработчик должен **сначала собрать** `frontend` (с Node.js >= 20.19 и npm):
 
 ```bash
-bash scripts/build-frontend.sh
-# создаёт web/next/
-sudo bash scripts/install-debian13.sh
+bash scripts/build-frontend.sh && sudo bash scripts/install-debian13.sh
+# сначала проверит TypeScript/Vite, затем установит web/next/
 ```
 
 Node.js и npm не нужны при штатной работе NetLab. Go отдаёт уже собранные
