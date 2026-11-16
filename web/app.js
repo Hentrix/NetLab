@@ -26,7 +26,7 @@ const json = body => JSON.stringify(body);
 const currentLab = () => state.labs.find(x => x.id === state.selectedLab);
 const currentNode = () => currentLab()?.nodes.find(x => x.id === state.selectedNode);
 const nicCount = portCapacity; // existing v0.3 nodes retain their 16-port layout
-const getImageName = n => state.images.find(im=>im.id===n?.imageId)?.name||'';
+const getImageName = n => n?.engine==='vpcs'?'VPCS · без образа':state.images.find(im=>im.id===n?.imageId)?.name||'';
 const getPort = (n,index)=>portInfo(n,index,getImageName(n));
 const labelPort=(n,index)=>getPort(n,index).name;
 const linkLabel = status => ({up:'Активно',waiting:'Ожидает второго узла',down:'Узлы остановлены',error:'Ошибка сети'})[status] || 'Неизвестно';
@@ -559,17 +559,17 @@ function renderDetails(lab){
     overview.append(table);
   }
   const types={router:'Маршрутизатор',switch:'Коммутатор',firewall:'Межсетевой экран',server:'Сервер',pc:'Компьютер'};
-  section('Конфигурация', [['Образ',img?.name||'—'],['Тип',types[kindOf(node)]],['Имя узла',node.name],['Консоль',node.status==='running'?'Serial · открыть':'Serial · неактивна']]);
-  section('Ресурсы',[['vCPU',`${node.cpus} ${node.cpus===1?'ядро':'ядра'}`],['Оперативная память',`${node.ram} МБ`],['Сетевая карта',node.nicModel],['Интерфейсы',nicCount(node)]]);
+  section('Конфигурация', [['Движок',node.engine==='vpcs'?'VPCS':'QEMU/KVM'],['Образ',node.engine==='vpcs'?'Не требуется':img?.name||'—'],['Тип',types[kindOf(node)]],['Имя узла',node.name],['Консоль',node.status==='running'?'Открыть':'Неактивна']]);
+  section('Ресурсы',node.engine==='vpcs'?[['Тип','Лёгкий виртуальный ПК'],['Интерфейсы',1]]:[['vCPU',`${node.cpus} ${node.cpus===1?'ядро':'ядра'}`],['Оперативная память',`${node.ram} МБ`],['Сетевая карта',node.nicModel],['Интерфейсы',nicCount(node)]]);
   if(node.error)overview.append(el('p','danger-text node-error',node.error));
   const actions=el('div','overview-actions');
   const toggle=el('button',node.status==='running'?'secondary danger-text':'primary',node.status==='running'?'■ Остановить':'▶ Запустить');
   toggle.onclick=async()=>{const action=node.status==='running'?'stop':'start',ok=await request(`labs/${lab.id}/nodes/${node.id}/${action}`,{method:'POST'});if(ok)refresh();};actions.append(toggle);
   const consoleBtn=el('button','secondary','›_ Консоль');consoleBtn.disabled=node.status!=='running';consoleBtn.onclick=()=>openConsole(node);actions.append(consoleBtn);
-  const settings=el('button','secondary','⚙ Параметры');settings.disabled=node.status==='running';settings.onclick=()=>showNodeSettings(node);actions.append(settings);
+  const settings=el('button','secondary','⚙ Параметры');settings.disabled=node.status==='running'||node.engine==='vpcs';settings.onclick=()=>showNodeSettings(node);actions.append(settings);
   const ports=el('button','secondary','⇄ Интерфейсы');ports.onclick=()=>{state.inspectorTab='interfaces';renderDetails(currentLab());};actions.append(ports);
   const icons=el('button','secondary','▧ Значок');icons.onclick=()=>openIconPicker(node.icon||iconFor(node),async file=>{const ok=await request(`labs/${lab.id}/nodes/${node.id}`,{method:'PATCH',body:json({icon:file})});if(ok)refresh();});actions.append(icons);
-  const logBtn=el('button','secondary','☷ Лог QEMU');logBtn.onclick=()=>openLog(node);actions.append(logBtn);
+  const logBtn=el('button','secondary','☷ Журнал запуска');logBtn.onclick=()=>openLog(node);actions.append(logBtn);
   const remove=el('button','secondary danger-text','Удалить устройство');remove.disabled=node.status==='running';remove.onclick=()=>deleteNode(node);actions.append(remove);
   overview.append(actions);
   const container=$('#interfacesPane');container.replaceChildren();
@@ -597,9 +597,22 @@ function showModal(title,body,onSubmit){$('#modalTitle').textContent=title;$('#m
 function hideModal(){$('#modalBackdrop').classList.add('hidden');}
 function showNewLab(){const wrap=el('div');wrap.innerHTML=`<form><div class="modal-body"><div class="field"><label>Название лаборатории</label><input name="name" required maxlength="80" placeholder="Например, OSPF + BGP Lab" autofocus/></div></div><div class="modal-footer"><button type="button" class="secondary cancel">Отмена</button><button type="submit" class="primary">Создать</button></div></form>`;$('.cancel',wrap).onclick=hideModal;showModal('Новая лаборатория',wrap,async data=>{const lab=await request('labs',{method:'POST',body:json({name:data.get('name')})});if(lab){state.selectedLab=lab.id;await refresh();return true;}return false;});}
 function showNodeModal(template=state.templates[0], position=null){
-  const lab=currentLab();if(!lab){toast('Сначала создайте лабораторию',true);return;}if(!state.images.length){toast('Сначала загрузите QCOW2/RAW-образ в библиотеку',true);switchView('images');return;}
+  const lab=currentLab();if(!lab){toast('Сначала создайте лабораторию',true);return;}if(template?.engine!=='vpcs'&&!state.images.length){toast('Сначала загрузите QCOW2/RAW-образ в библиотеку',true);switchView('images');return;}
   const t=template||{id:'generic',name:'QEMU VM',kind:'server',cpus:1,ram:1024,nicModel:'virtio-net-pci',nicCount:4,diskBus:'virtio'};
   const wrap=el('div');wrap.innerHTML=`<form><div class="modal-body"><div class="field"><label>Имя устройства</label><input name="name" required maxlength="80" value="${escapeHTML(t.name)}"/></div><div class="field"><label>Вид устройства на схеме</label><select name="kind"><option value="router">Маршрутизатор</option><option value="switch">Коммутатор</option><option value="firewall">Межсетевой экран</option><option value="server">Сервер</option><option value="pc">Компьютер</option></select></div><div class="field"><label>Значок на схеме</label><input type="hidden" name="icon" value="${escapeHTML(iconFor(t))}"/><button type="button" class="icon-selector"><img class="icon-selector-preview" src="${iconURL(iconFor(t))}" alt=""/><span class="icon-selected-label">${escapeHTML(iconFor(t))}</span><span>Изменить…</span></button></div><div class="field"><label>Дисковый образ</label><select name="imageId" required>${state.images.map(im=>`<option value="${im.id}">${escapeHTML(im.name)} · ${escapeHTML(im.format)}</option>`).join('')}</select></div><div class="form-grid"><div class="field"><label>RAM (MiB)</label><input name="ram" type="number" min="128" max="131072" value="${t.ram}" required/></div><div class="field"><label>vCPU</label><input name="cpus" type="number" min="1" max="64" value="${t.cpus}" required/></div></div><div class="form-grid"><div class="field"><label>Network adapter</label><select name="nicModel"><option value="virtio-net-pci">virtio-net-pci</option><option value="e1000">e1000</option><option value="rtl8139">rtl8139</option></select></div><div class="field"><label>Disk bus</label><select name="diskBus"><option value="virtio">virtio</option><option value="ide">IDE</option><option value="scsi">SCSI</option></select></div></div><div class="field"><label>Обозначения интерфейсов на схеме</label><select name="portStyle">${portStyleOptions(t.portStyle||'auto')}</select></div><div class="field"><label>Ethernet-порты (создаются при запуске VM)</label><input name="nicCount" type="number" min="1" max="16" value="${t.nicCount || 4}" required/><small class="muted">Для горячего подключения кабелей используются заранее созданные сетевые карты. Количество изменяется только при остановленной VM.</small></div><div class="field"><label for="nodeAddQuantity">Количество устройств</label><input id="nodeAddQuantity" name="quantity" type="number" min="1" max="32" step="1" value="1" required/><small class="muted">При добавлении нескольких устройств имена будут пронумерованы, а узлы размещены рядом на полотне.</small></div></div><div class="modal-footer"><button type="button" class="secondary cancel">Отмена</button><button type="submit" class="primary">Добавить устройство</button></div></form>`;
+  const isVPCS=t.engine==='vpcs';
+  if(isVPCS){
+    const image=$('select[name=imageId]',wrap);image.required=false;image.disabled=true;image.closest('.field').classList.add('hidden');
+    for(const name of ['ram','cpus','nicModel','diskBus']){
+      const field=$(`[name=${name}]`,wrap).closest('.field');field.classList.add('hidden');
+      // These fields are not part of a VPCS instance.
+    }
+    const ports=$('input[name=nicCount]',wrap);ports.value='1';ports.readOnly=true;
+    const kind=$('select[name=kind]',wrap);kind.value='pc';kind.disabled=true;
+    const hint=el('p','muted','VPCS работает без образа диска и KVM. Доступен один интерфейс eth0.');
+    ports.closest('.field').append(hint);
+    $('select[name=kind]',wrap).value='pc';
+  }
   // No persistent device catalogue on the right: choose template in this dialog.
   const chooser=el('div','field');const chooseLabel=el('label','','Профиль устройства');const choose=el('select');
   for(const tpl of state.templates){const option=el('option','',tpl.name);option.value=tpl.id;choose.append(option);}choose.value=t.id||state.templates[0]?.id;
@@ -612,7 +625,7 @@ function showNodeModal(template=state.templates[0], position=null){
     const quantity=Number(data.get('quantity'));
     if(!Number.isInteger(quantity)||quantity<1||quantity>32){toast('Количество устройств должно быть от 1 до 32',true);return false;}
     const count=lab.nodes.length;
-    const device={name:data.get('name'),imageId:data.get('imageId'),ram:Number(data.get('ram')),cpus:Number(data.get('cpus')),nicModel:data.get('nicModel'),nicCount:Number(data.get('nicCount')),diskBus:data.get('diskBus'),kind:data.get('kind'),portStyle:data.get('portStyle'),icon:data.get('icon'),x:position?.x??140+(count%5)*190,y:position?.y??100+Math.floor(count/5)*155};
+    const device={name:data.get('name'),engine:isVPCS?'vpcs':'qemu',imageId:isVPCS?'':data.get('imageId'),ram:isVPCS?128:Number(data.get('ram')),cpus:isVPCS?1:Number(data.get('cpus')),nicModel:isVPCS?'e1000':data.get('nicModel'),nicCount:isVPCS?1:Number(data.get('nicCount')),diskBus:isVPCS?'ide':data.get('diskBus'),kind:isVPCS?'pc':data.get('kind'),portStyle:data.get('portStyle'),icon:data.get('icon'),x:position?.x??140+(count%5)*190,y:position?.y??100+Math.floor(count/5)*155};
     const result=quantity===1
       ?await request(`labs/${lab.id}/nodes`,{method:'POST',body:json(device)})
       :await request(`labs/${lab.id}/nodes/batch`,{method:'POST',body:json({template:device,count:quantity})});
@@ -640,11 +653,11 @@ async function refreshTelemetry(){
 function renderImages(){const table=$('#imagesTable');table.replaceChildren();const header=el('div','table-row table-heading');for(const name of ['ОБРАЗ','ФОРМАТ','РАЗМЕР','ДЕЙСТВИЯ'])header.append(el('div','',name));table.append(header);
   for(const img of state.images){const row=el('div','table-row');row.append(el('strong','',img.name));const badge=el('div');badge.append(el('span','filetype',img.format.toUpperCase()));row.append(badge,el('div','muted',bytes(img.size)));const actions=el('div');const remove=el('button','','Удалить');remove.onclick=async()=>{if(!confirm(`Удалить образ ${img.name}?`))return;const ok=await request(`images/${img.id}`,{method:'DELETE'});if(ok)refresh();};actions.append(remove);row.append(actions);table.append(row);}if(!state.images.length)table.append(el('div','modal-body muted','Образов пока нет. Загрузите автономный QCOW2 или RAW диск.'));
 }
-async function refreshSystem(){const sys=await request('system');if(!sys)return;const area=$('#systemCards');area.replaceChildren();for(const [name,description,key] of [['QEMU','Эмулятор виртуальных машин','qemu'],['QEMU: запуск','Запуск от системного пользователя netlab-vm','qemuSpawn'],['QEMU-IMG','Импорт и overlay-диски','qemuImg'],['Open vSwitch','L2 коммутация','ovs'],['KVM','Аппаратное ускорение','kvm'],['VM user','netlab-vm','vmUser']]){const card=el('div','status-card');card.append(el('strong','',name),el('span',sys[key]?'● Готово':'○ Недоступно'));$('span',card).className=sys[key]?'ok':'not-ok';card.append(el('p','muted',description));if(key==='qemuSpawn'&&!sys[key]&&sys.qemuSpawnError)card.append(el('p','danger-text',sys.qemuSpawnError));area.append(card);}$('#serverHealth').textContent=sys.qemuSpawn&&sys.ovs&&sys.qemuImg&&sys.vmUser?'● Engine ready':'● Требуется проверка';$('#serverHealth').className=`pill ${sys.qemuSpawn&&sys.ovs&&sys.qemuImg&&sys.vmUser?'good-pill':'bad-pill'}`;}
+async function refreshSystem(){const sys=await request('system');if(!sys)return;const area=$('#systemCards');area.replaceChildren();for(const [name,description,key] of [['QEMU','Эмулятор виртуальных машин','qemu'],['QEMU: запуск','Запуск от системного пользователя netlab-vm','qemuSpawn'],['QEMU-IMG','Импорт и overlay-диски','qemuImg'],['Open vSwitch','L2 коммутация','ovs'],['KVM','Аппаратное ускорение','kvm'],['VM user','netlab-vm','vmUser'],['VPCS','Лёгкие виртуальные компьютеры','vpcs']]){const card=el('div','status-card');card.append(el('strong','',name),el('span',sys[key]?'● Готово':'○ Недоступно'));$('span',card).className=sys[key]?'ok':'not-ok';card.append(el('p','muted',description));if(key==='qemuSpawn'&&!sys[key]&&sys.qemuSpawnError)card.append(el('p','danger-text',sys.qemuSpawnError));area.append(card);}$('#serverHealth').textContent=sys.qemuSpawn&&sys.ovs&&sys.qemuImg&&sys.vmUser?'● Engine ready':'● Требуется проверка';$('#serverHealth').className=`pill ${sys.qemuSpawn&&sys.ovs&&sys.qemuImg&&sys.vmUser?'good-pill':'bad-pill'}`;}
 function openConsole(node){const lab=currentLab();if(!lab)return;closeConsole();state.console={lab:lab.id,node:node.id};$('#consoleTitle').textContent=node.name;$('#consoleOutput').textContent='Подключение к Serial...';$('#consoleBackdrop').classList.remove('hidden');$('#consoleInput').focus();pollConsole();state.poller=setInterval(pollConsole,900);}
 async function pollConsole(){const c=state.console;if(!c)return;try{const response=await api(`labs/${c.lab}/nodes/${c.node}/console`);if(state.console!==c)return;const target=$('#consoleOutput');const nearBottom=target.scrollHeight-target.scrollTop-target.clientHeight<100;if(target.textContent!==response.output)target.textContent=response.output||'[Serial console: ожидается вывод гостевой ОС]';if(nearBottom)target.scrollTop=target.scrollHeight;}catch(err){if(state.console===c)$('#consoleOutput').textContent=`Ошибка: ${err.message}`;}}
 function closeConsole(){state.console=null;if(state.poller){clearInterval(state.poller);state.poller=null;}$('#consoleBackdrop').classList.add('hidden');}
-async function openLog(node){const lab=currentLab();if(!lab)return;const response=await request(`labs/${lab.id}/nodes/${node.id}/log`);if(!response)return;const wrap=el('div','modal-body');const pre=el('pre','',response.output||'Лог пока пуст');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;font-size:11px;color:#abccff';wrap.append(pre);showModal(`QEMU log · ${node.name}`,wrap,()=>true);}
+async function openLog(node){const lab=currentLab();if(!lab)return;const response=await request(`labs/${lab.id}/nodes/${node.id}/log`);if(!response)return;const wrap=el('div','modal-body');const pre=el('pre','',response.output||'Лог пока пуст');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;font-size:11px;color:#abccff';wrap.append(pre);showModal(`Журнал · ${node.name}`,wrap,()=>true);}
 function showLogin(){$('#loginBackdrop').classList.remove('hidden');}
 function hideLogin(){$('#loginBackdrop').classList.add('hidden');}
 async function boot(){try{const resp=await api('labs');state.labs=resp;hideLogin();await refresh();await refreshSystem();await refreshTelemetry();}catch{showLogin();}}
@@ -756,7 +769,7 @@ function showNodeContext(x,y,node,{includeCable=true}={}){
   {icon:'✎',label:'Переименовать',action:()=>showRename(node)},
   {icon:'⇄',label:'Интерфейсы и скорости',action:()=>showPortStyle(node)},
   {icon:'▧',label:'Выбрать иконку',action:()=>openIconPicker(node.icon||iconFor(node),async file=>{const ok=await request(`labs/${lab.id}/nodes/${node.id}`,{method:'PATCH',body:json({icon:file})});if(ok)refresh();})},
-  {icon:'⚙',label:'Настройки устройства',disabled:running,action:()=>showNodeSettings(node)},
+  {icon:'⚙',label:'Настройки устройства',disabled:running||node.engine==='vpcs',action:()=>showNodeSettings(node)},
   {icon:'☷',label:'Журнал QEMU',action:()=>openLog(node)},
   {separator:true},
   {icon:'✕',label:'Удалить устройство',destructive:true,disabled:running,action:()=>deleteNode(node)}

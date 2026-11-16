@@ -486,3 +486,18 @@
 .cable-style-preview{height:57px;background:#f7fafc;border:1px solid #d9e3ec;border-radius:6px;display:flex;align-items:center;padding:6px 10px}
 .cable-style-preview svg{width:100%;height:44px;overflow:visible}
 @media(max-width:520px){.cable-style-options{grid-template-columns:1fr 1fr}.cable-style-options label:last-child{grid-column:1/-1}}
+
+/* v0.7.0: shared header/footer baselines and crisp SVG control icons. */
+#app,.sidebar,.main{min-height:100vh}
+.logo,.topbar{box-sizing:border-box;height:60px;min-height:60px;flex:0 0 60px}
+.logo{padding:0 20px}
+.topbar{padding:0 24px}
+.sidebar-footer,.workspace-footer{min-height:42px;height:42px;flex:0 0 42px;box-sizing:border-box;display:flex;align-items:center;padding-top:0;padding-bottom:0}
+.workspace{margin-bottom:0}
+.sidebar-footer{padding-left:18px;padding-right:18px}
+.explorer-search>span svg{width:17px;height:17px;display:block}
+.explorer-add-bottom>span:first-child{display:grid;place-items:center;flex:0 0 24px;height:26px;line-height:1}
+.explorer-add-bottom>span:first-child svg{display:block;width:19px;height:19px}
+#refreshSystem svg,#imageUploadLabel svg{display:inline-block;width:16px;height:16px;vertical-align:middle;margin-right:6px}
+.port-badge{pointer-events:none}
+.port-badge .wire-label{font-size:11px;dominant-baseline:central}

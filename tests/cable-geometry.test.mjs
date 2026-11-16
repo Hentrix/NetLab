@@ -66,3 +66,25 @@ test('Parallel links remain ordered when local port numbers are reversed',()=>{
  const pointsAfter=layoutParallelCables(changed);
  assert.deepEqual(Object.fromEntries(points),Object.fromEntries(pointsAfter),'Changing port numbers must not rearrange attachment points');
 });
+
+
+test('Port labels stay precisely on the cable including diagonal links',()=>{
+ const lab={nodes:[node('a',30,50),node('b',430,200),node('c',180,410)],links:[link('ab','a','b',0,3),link('bc','b','c',1,0)]};
+ const geo=layoutParallelCables(lab),badges=layoutPortBadges(lab,geo,(_,i)=>`ether${i+1}`);
+ for(const ln of lab.links){
+  const wire=geo.get(ln.id);
+  for(const badge of [badges.get(ln.id).a,badges.get(ln.id).b]){
+   const cross=(badge.x-wire.A.x)*(wire.B.y-wire.A.y)-(badge.y-wire.A.y)*(wire.B.x-wire.A.x);
+   assert.ok(Math.abs(cross)<1e-7,`Badge ${ln.id} is off its cable by ${cross}`);
+  }
+ }
+});
+test('Port labels move only along each cable when crowded',()=>{
+ const lab={nodes:[node('a',100,100),node('b',560,100)],links:[0,1,2,3,4].map(i=>link('L'+i,'a','b',i,4-i))};
+ const layout=layoutParallelCables(lab),badges=layoutPortBadges(lab,layout,(_,p)=>`Gi0/${p}`);
+ for(const ln of lab.links){const wire=layout.get(ln.id);
+  for(const b of [badges.get(ln.id).a,badges.get(ln.id).b]){
+   assert.ok(Math.abs(b.y-wire.A.y)<1e-6,`Label drifted off horizontal wire ${ln.id}`);
+  }
+ }
+});

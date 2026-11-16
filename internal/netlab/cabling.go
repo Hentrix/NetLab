@@ -89,6 +89,16 @@ func awaitQMP(path string) error {
 func qmpSetLink(path string, port int, up bool) error {
 	return qmpCommand(path, "set_link", map[string]any{"name": nicID(port), "up": up})
 }
+func instanceSetLink(i *Instance, port int, up bool) error {
+	if i == nil {
+		return nil
+	}
+	// VPCS does not speak QMP; its TAP is joined to or removed from OVS.
+	if i.engine == "vpcs" {
+		return nil
+	}
+	return qmpSetLink(i.qmp, port, up)
+}
 func (e *Engine) running(labID, nodeID string) *Instance {
 	i := e.instances[key(labID, nodeID)]
 	if i == nil || i.status != "running" {
@@ -151,7 +161,7 @@ func (e *Engine) connectLocked(l Lab, link Link) error {
 		if ep.i == nil {
 			continue
 		}
-		if err := qmpSetLink(ep.i.qmp, ep.port, up); err != nil {
+		if err := instanceSetLink(ep.i, ep.port, up); err != nil {
 			return err
 		}
 	}
@@ -174,7 +184,7 @@ func (e *Engine) disconnectLocked(l Lab, link Link) error {
 		port int
 	}{{a, link.APort}, {b, link.BPort}} {
 		if ep.i != nil {
-			if err := qmpSetLink(ep.i.qmp, ep.port, false); err != nil {
+			if err := instanceSetLink(ep.i, ep.port, false); err != nil {
 				problems = append(problems, err)
 			}
 		}

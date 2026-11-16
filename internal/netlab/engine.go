@@ -24,6 +24,7 @@ type Console struct {
 	mu      sync.Mutex
 	content []byte
 	conn    net.Conn
+	writer  io.WriteCloser // stdin for process-backed consoles (VPCS)
 }
 
 func (c *Console) append(b []byte) {
@@ -38,11 +39,15 @@ func (c *Console) read() string { c.mu.Lock(); defer c.mu.Unlock(); return strin
 func (c *Console) write(text string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.conn == nil {
-		return errors.New("serial console ещё не готова")
+	if c.conn != nil {
+		_, err := io.WriteString(c.conn, text)
+		return err
 	}
-	_, err := io.WriteString(c.conn, text)
-	return err
+	if c.writer != nil {
+		_, err := io.WriteString(c.writer, text)
+		return err
+	}
+	return errors.New("консоль ещё не готова")
 }
 
 type Instance struct {
@@ -50,6 +55,7 @@ type Instance struct {
 	done    chan struct{}
 	console *Console
 	taps    []string
+	engine  string // qemu or vpcs
 	links   []Link
 	qmp     string
 	err     string
@@ -241,7 +247,7 @@ func (e *Engine) Start(l Lab, n Node, img Image) error {
 		return fmt.Errorf("запуск QEMU от netlab-vm: %w. Проверьте: sudo -u netlab-vm /usr/bin/qemu-system-x86_64 --version; sudo bash /opt/netlab/scripts/diagnose-qemu.sh; sudo journalctl -u netlab -n 80", err)
 	}
 	logFile.Close()
-	ins := &Instance{cmd: cmd, done: make(chan struct{}), taps: taps, qmp: qmp, console: &Console{}, status: "running"}
+	ins := &Instance{cmd: cmd, done: make(chan struct{}), taps: taps, engine: "qemu", qmp: qmp, console: &Console{}, status: "running"}
 	e.instances[k] = ins
 	go e.readSerial(ins, serial)
 	go func() {
@@ -259,13 +265,16 @@ func (e *Engine) Start(l Lab, n Node, img Image) error {
 				peer, pp = ln.B, ln.BPort
 			}
 			if other := e.instances[key(l.ID, peer)]; other != nil && other.status == "running" {
-				_ = qmpSetLink(other.qmp, pp, false)
+				_ = instanceSetLink(other, pp, false)
 			}
 		}
 		e.mu.Unlock()
 		ins.console.mu.Lock()
 		if ins.console.conn != nil {
 			_ = ins.console.conn.Close()
+		}
+		if ins.console.writer != nil {
+			_ = ins.console.writer.Close()
 		}
 		ins.console.mu.Unlock()
 		for _, t := range taps {
@@ -364,7 +373,9 @@ func (e *Engine) Stop(lab, node string) error {
 		return nil
 	}
 	e.mu.Unlock()
-	if err := qmpQuit(ins.qmp); err != nil {
+	if ins.engine == "vpcs" {
+		_ = ins.cmd.Process.Signal(syscall.SIGTERM)
+	} else if err := qmpQuit(ins.qmp); err != nil {
 		_ = ins.cmd.Process.Signal(syscall.SIGTERM)
 	}
 	select {

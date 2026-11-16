@@ -74,6 +74,7 @@ type Node struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
 	ImageID   string     `json:"imageId"`
+	Engine    string     `json:"engine,omitempty"` // empty = legacy QEMU, or vpcs
 	RAM       int        `json:"ram"`
 	CPUs      int        `json:"cpus"`
 	NICModel  string     `json:"nicModel"`
@@ -145,10 +146,21 @@ func validateNode(n Node) error {
 	if err := validName(n.Name); err != nil {
 		return err
 	}
-	if n.RAM < 128 || n.RAM > 131072 {
+	if n.Engine != "" && n.Engine != "qemu" && n.Engine != "vpcs" {
+		return errors.New("неподдерживаемый движок устройства")
+	}
+	if n.Engine == "vpcs" {
+		if n.ImageID != "" || n.NICCount != 1 {
+			return errors.New("VPCS не использует диск и поддерживает ровно один Ethernet-порт")
+		}
+		if n.Kind != "" && n.Kind != "pc" {
+			return errors.New("VPCS должен быть конечным устройством")
+		}
+	}
+	if n.Engine != "vpcs" && (n.RAM < 128 || n.RAM > 131072) {
 		return errors.New("RAM вне диапазона 128–131072 МиБ")
 	}
-	if n.CPUs < 1 || n.CPUs > 64 {
+	if n.Engine != "vpcs" && (n.CPUs < 1 || n.CPUs > 64) {
 		return errors.New("число vCPU должно быть 1–64")
 	}
 	if n.Kind != "" && n.Kind != "router" && n.Kind != "switch" && n.Kind != "firewall" && n.Kind != "server" && n.Kind != "pc" {
@@ -181,6 +193,9 @@ func validateNode(n Node) error {
 	}
 	if n.Icon != "" && !safeIcon.MatchString(n.Icon) {
 		return errors.New("недопустимое имя PNG-иконки")
+	}
+	if n.Engine == "vpcs" {
+		return nil
 	}
 	if n.ImageID == "" {
 		return errors.New("выберите образ")

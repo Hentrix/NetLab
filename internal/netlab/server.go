@@ -53,7 +53,7 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		respond(w, 200, map[string]any{"status": "ok", "version": "0.6.9"})
+		respond(w, 200, map[string]any{"status": "ok", "version": "0.7.0"})
 	})
 	mux.Handle("/api/", s.auth(http.HandlerFunc(s.api)))
 	mux.Handle("/", http.FileServer(http.Dir(s.web)))
@@ -135,6 +135,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		_, q := exec.LookPath("qemu-system-x86_64")
 		_, ov := exec.LookPath("ovs-vsctl")
 		_, img := exec.LookPath("qemu-img")
+		_, vpcsErr := exec.LookPath("vpcs")
 		_, userErr := user.Lookup("netlab-vm")
 		qemuSpawn, qemuSpawnError := probeQEMUSpawn()
 		var kvm bool
@@ -143,14 +144,14 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 				kvm = canUseKVM(cred)
 			}
 		}
-		respond(w, 200, map[string]any{"qemu": q == nil, "ovs": ov == nil, "qemuImg": img == nil, "vmUser": userErr == nil, "kvm": kvm, "qemuSpawn": qemuSpawn, "qemuSpawnError": qemuSpawnError})
+		respond(w, 200, map[string]any{"qemu": q == nil, "ovs": ov == nil, "qemuImg": img == nil, "vmUser": userErr == nil, "kvm": kvm, "qemuSpawn": qemuSpawn, "qemuSpawnError": qemuSpawnError, "vpcs": vpcsErr == nil})
 		return
 	case "templates":
 		if r.Method != "GET" {
 			fail(w, 405, "method not allowed")
 			return
 		}
-		respond(w, 200, []map[string]any{{"id": "generic", "kind": "server", "name": "Generic x86 QEMU", "portStyle": "eth", "ram": 1024, "cpus": 1, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "mikrotik-chr", "kind": "router", "name": "MikroTik CHR", "portStyle": "ether", "ram": 256, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "ide"}, {"id": "cisco-iosv", "kind": "router", "name": "Cisco IOSv", "portStyle": "gi", "ram": 768, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "virtio"}, {"id": "linux", "kind": "pc", "name": "Linux VM", "portStyle": "eth", "ram": 2048, "cpus": 2, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}})
+		respond(w, 200, []map[string]any{{"id": "generic", "kind": "server", "name": "Generic x86 QEMU", "portStyle": "eth", "ram": 1024, "cpus": 1, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "mikrotik-chr", "kind": "router", "name": "MikroTik CHR", "portStyle": "ether", "ram": 256, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "ide"}, {"id": "cisco-iosv", "kind": "router", "name": "Cisco IOSv", "portStyle": "gi", "ram": 768, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "virtio"}, {"id": "linux", "kind": "pc", "name": "Linux VM", "portStyle": "eth", "ram": 2048, "cpus": 2, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "vpcs", "engine": "vpcs", "kind": "pc", "name": "VPCS", "portStyle": "eth", "ram": 128, "cpus": 1, "nicModel": "e1000", "nicCount": 1, "diskBus": "ide"}})
 		return
 	case "images":
 		s.imagesAPI(w, r, parts)
@@ -269,6 +270,19 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request) {
 	respond(w, 201, img)
 }
 func parseInt(s string) (int, error) { var v int; _, err := fmt.Sscanf(s, "%d", &v); return v, err }
+
+// Each node selects its own emulation driver. Legacy saved nodes default to QEMU.
+func (s *Server) startNode(l Lab, n Node) error {
+	if n.Engine == "vpcs" {
+		return s.engine.StartVPCS(l, n)
+	}
+	img := findImage(&s.store.State, n.ImageID)
+	if img == nil {
+		return fmt.Errorf("образ узла %s не найден", n.Name)
+	}
+	return s.engine.Start(l, n, *img)
+}
+
 func (s *Server) labsAPI(w http.ResponseWriter, r *http.Request, p []string) {
 	if len(p) == 1 {
 		if r.Method == "GET" {
@@ -348,12 +362,7 @@ func (s *Server) labsAPI(w http.ResponseWriter, r *http.Request, p []string) {
 	if len(p) == 3 && r.Method == "POST" {
 		if p[2] == "start" {
 			for _, n := range lab.Nodes {
-				img := findImage(&s.store.State, n.ImageID)
-				if img == nil {
-					fail(w, 409, "образ узла "+n.Name+" не найден")
-					return
-				}
-				if err := s.engine.Start(*lab, n, *img); err != nil {
+				if err := s.startNode(*lab, n); err != nil {
 					fail(w, 500, n.Name+": "+err.Error())
 					return
 				}
@@ -405,13 +414,17 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			req.Template.DiskBus = "virtio"
 		}
 		if req.Template.NICCount == 0 {
-			req.Template.NICCount = 16
+			if req.Template.Engine == "vpcs" {
+				req.Template.NICCount = 1
+			} else {
+				req.Template.NICCount = 16
+			}
 		}
 		if err := validateNode(req.Template); err != nil {
 			fail(w, 400, err.Error())
 			return
 		}
-		if findImage(&s.store.State, req.Template.ImageID) == nil {
+		if req.Template.Engine != "vpcs" && findImage(&s.store.State, req.Template.ImageID) == nil {
 			fail(w, 404, "образ не найден")
 			return
 		}
@@ -448,14 +461,18 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			req.DiskBus = "virtio"
 		}
 		if req.NICCount == 0 {
-			// Older API clients only knew 16 Ethernet ports.
-			req.NICCount = 16
+			if req.Engine == "vpcs" {
+				req.NICCount = 1
+			} else {
+				// Older API clients only knew 16 Ethernet ports.
+				req.NICCount = 16
+			}
 		}
 		if err := validateNode(req); err != nil {
 			fail(w, 400, err.Error())
 			return
 		}
-		if findImage(&s.store.State, req.ImageID) == nil {
+		if req.Engine != "vpcs" && findImage(&s.store.State, req.ImageID) == nil {
 			fail(w, 404, "образ не найден")
 			return
 		}
@@ -552,6 +569,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 				return
 			}
 			req.ID = node.ID
+			req.Engine = node.Engine
 			req.Status = "stopped"
 			if req.Kind == "" {
 				req.Kind = node.Kind
@@ -560,7 +578,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 				fail(w, 400, err.Error())
 				return
 			}
-			if findImage(&s.store.State, req.ImageID) == nil {
+			if req.Engine != "vpcs" && findImage(&s.store.State, req.ImageID) == nil {
 				fail(w, 404, "образ не найден")
 				return
 			}
@@ -613,12 +631,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 	if len(p) == 5 {
 		action := p[4]
 		if r.Method == "POST" && action == "start" {
-			img := findImage(&s.store.State, node.ImageID)
-			if img == nil {
-				fail(w, 404, "образ не найден")
-				return
-			}
-			if err := s.engine.Start(*l, *node, *img); err != nil {
+			if err := s.startNode(*l, *node); err != nil {
 				fail(w, 500, err.Error())
 				return
 			}
@@ -657,7 +670,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			return
 		}
 		if action == "log" && r.Method == "GET" {
-			respond(w, 200, map[string]string{"output": tailLog(filepath.Join(s.data, "runtime", l.ID, node.ID, "qemu.log"))})
+			respond(w, 200, map[string]string{"output": tailLog(filepath.Join(s.data, "runtime", l.ID, node.ID, map[bool]string{true: "vpcs.log", false: "qemu.log"}[node.Engine == "vpcs"]))})
 			return
 		}
 	}
