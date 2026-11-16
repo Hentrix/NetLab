@@ -53,7 +53,7 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		respond(w, 200, map[string]any{"status": "ok", "version": "0.6.5"})
+		respond(w, 200, map[string]any{"status": "ok", "version": "0.6.6"})
 	})
 	mux.Handle("/api/", s.auth(http.HandlerFunc(s.api)))
 	mux.Handle("/", http.FileServer(http.Dir(s.web)))
@@ -493,14 +493,14 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			}
 			next := *node
 			if req.X != nil {
-				if *req.X < 0 || *req.X > 10000 {
+				if *req.X < -10000 || *req.X > 10000 {
 					fail(w, 400, "x вне диапазона")
 					return
 				}
 				next.X = *req.X
 			}
 			if req.Y != nil {
-				if *req.Y < 0 || *req.Y > 10000 {
+				if *req.Y < -10000 || *req.Y > 10000 {
 					fail(w, 400, "y вне диапазона")
 					return
 				}

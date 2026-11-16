@@ -10,7 +10,7 @@ export function resizeAnnotationRect(original, side, dx, dy, minHeight = annotat
   const b = annotationLimits(original.kind);
   const widthMin = b.minWidth, heightMin = Math.min(b.maxHeight, Math.max(b.minHeight, minHeight));
   let {x,y,width,height} = original;
-  if (!side) return {x:Math.max(0,Math.min(10000,x+dx)), y:Math.max(0,Math.min(10000,y+dy)), width,height};
+  if (!side) return {x:Math.max(-10000,Math.min(10000,x+dx)), y:Math.max(-10000,Math.min(10000,y+dy)), width,height};
   if (side.includes('e')) width = Math.max(widthMin,Math.min(b.maxWidth,original.width+dx));
   if (side.includes('s')) height = Math.max(heightMin,Math.min(b.maxHeight,original.height+dy));
   if (side.includes('w')) {
@@ -21,8 +21,9 @@ export function resizeAnnotationRect(original, side, dx, dy, minHeight = annotat
     height = Math.max(heightMin,Math.min(b.maxHeight,original.height-dy));
     y = original.y + original.height - height;
   }
-  // Do not allow a west/north handle to move beyond the top-left of the canvas.
-  if (x < 0) { width += x; x=0; }
-  if (y < 0) { height += y; y=0; }
+  // A note may extend above/left of the original world origin. Never shrink
+  // content just because the box crosses x=0 or y=0.
+  if (x < -10000) { width -= -10000-x; x=-10000; }
+  if (y < -10000) { height -= -10000-y; y=-10000; }
   return {x:Math.min(10000,x),y:Math.min(10000,y),width:Math.max(widthMin,width),height:Math.max(heightMin,height)};
 }

@@ -35,7 +35,9 @@ func TestAnnotationsCRUDAndPersistence(t *testing.T) {
 	if len(found) != 1 || found[0].Text != "PE1 ↔ PE2" || found[0].X != 220 || found[0].FontSize != 18 || !found[0].Bold || found[0].Background != "transparent" || found[0].BorderWidth != 2 {
 		t.Fatalf("not persisted: %+v", found)
 	}
-	code, b = httpCall(t, s, "PATCH", url+"/"+a.ID, []byte(`{"kind":"note","text":"x","x":-1,"y":0,"width":200,"height":80}`), true)
+	code, b = httpCall(t, s, "PATCH", url+"/"+a.ID, []byte(`{"kind":"note","text":"x","x":-100,"y":-200,"width":200,"height":80}`), true)
+	assertStatus(t, code, 200, b)
+	code, b = httpCall(t, s, "PATCH", url+"/"+a.ID, []byte(`{"kind":"note","text":"x","x":-10001,"y":0,"width":200,"height":80}`), true)
 	assertStatus(t, code, 400, b)
 	code, b = httpCall(t, s, "PATCH", url+"/"+a.ID, []byte(`{"kind":"note","text":"safe","x":1,"y":1,"width":200,"height":80,"color":"red"}`), true)
 	assertStatus(t, code, 400, b)

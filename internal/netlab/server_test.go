@@ -251,14 +251,16 @@ func TestVisualChangesWhileRunningCompatible(t *testing.T) {
 	}
 	code, b = httpCall(t, s, "PATCH", url, []byte(`{"icon":"../../etc/passwd"}`), true)
 	assertStatus(t, code, 400, b)
-	code, b = httpCall(t, s, "PATCH", url, []byte(`{"x":-10}`), true)
+	code, b = httpCall(t, s, "PATCH", url, []byte(`{"x":-10,"y":-260}`), true)
+	assertStatus(t, code, 200, b)
+	code, b = httpCall(t, s, "PATCH", url, []byte(`{"x":-10001}`), true)
 	assertStatus(t, code, 400, b)
 	state, err := LoadStore(filepath.Join(s.data, "state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.State.Labs[0].Nodes[0].Icon != "Router.png" {
-		t.Fatal("icon not persisted")
+	if state.State.Labs[0].Nodes[0].Icon != "Router.png" || state.State.Labs[0].Nodes[0].X != -10 || state.State.Labs[0].Nodes[0].Y != -260 {
+		t.Fatal("visual placement not persisted")
 	}
 }
 
@@ -364,4 +366,30 @@ func TestBatchNodeCreationAndValidation(t *testing.T) {
 	if len(reloaded.State.Labs[0].Nodes) != 5 {
 		t.Fatal("batch nodes not persisted")
 	}
+}
+
+func TestNegativeWorldCoordinatesForNodes(t *testing.T) {
+	s := newTestServer(t)
+	imageID := newID()
+	s.store.State.Images = append(s.store.State.Images, Image{ID: imageID, Name: "test.qcow2", Format: "qcow2"})
+	code, body := httpCall(t, s, "POST", "/api/labs", []byte(`{"name":"Infinite canvas"}`), true)
+	assertStatus(t, code, 201, body)
+	var lab Lab
+	if err := json.Unmarshal(body, &lab); err != nil {
+		t.Fatal(err)
+	}
+	url := "/api/labs/" + lab.ID + "/nodes"
+	valid := []byte(fmt.Sprintf(`{"name":"R1","imageId":%q,"ram":256,"cpus":1,"nicModel":"e1000","diskBus":"ide","x":-150,"y":-220}`, imageID))
+	code, body = httpCall(t, s, "POST", url, valid, true)
+	assertStatus(t, code, 201, body)
+	var node Node
+	if err := json.Unmarshal(body, &node); err != nil {
+		t.Fatal(err)
+	}
+	if node.X != -150 || node.Y != -220 {
+		t.Fatalf("negative coordinates were lost: %+v", node)
+	}
+	invalid := []byte(fmt.Sprintf(`{"name":"R2","imageId":%q,"ram":256,"cpus":1,"nicModel":"e1000","diskBus":"ide","x":-10001,"y":0}`, imageID))
+	code, body = httpCall(t, s, "POST", url, invalid, true)
+	assertStatus(t, code, 400, body)
 }

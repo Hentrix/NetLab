@@ -442,3 +442,7 @@
 }
 .node:hover .device-name { color: #214e78; }
 .node.active .device-name { color: #184f80; }
+
+/* v0.6.6: world coordinates can be negative after panning; do not clip
+   nodes or Ethernet lines at the original (0,0) stage boundary. */
+.stage, .stage-position, #nodesLayer, #annotationsLayer, .links { overflow:visible; }

@@ -40,7 +40,7 @@ func buildNodeBatch(existing []Node, template Node, count int) ([]Node, error) {
 		}
 		n.X = template.X + (i%5)*190
 		n.Y = template.Y + (i/5)*155
-		if n.X < 0 || n.X > 10000 || n.Y < 0 || n.Y > 10000 {
+		if n.X < -10000 || n.X > 10000 || n.Y < -10000 || n.Y > 10000 {
 			return nil, errors.New("положение устройств выходит за пределы полотна")
 		}
 		if err := validateNode(n); err != nil {

@@ -3,6 +3,7 @@ import {anchorFor,layoutParallelCables} from './cable-geometry.mjs';
 import {deviceStatusLabel,deviceStatusStyle} from './device-status.mjs';
 import {annotationLimits,resizeAnnotationRect,MIN_FITTED_FONT_PX} from './annotation-layout.mjs';
 import {downloadTopologyPNG} from './topology-snapshot.mjs';
+import {translateSelection,worldCoordinates} from './canvas-coordinates.mjs';
 const $ = (q, root = document) => root.querySelector(q);
 const el = (tag, cls = '', text = '') => { const item = document.createElement(tag); if (cls) item.className = cls; item.textContent = text; return item; };
 const state = {token: sessionStorage.getItem('netlabToken') || '', labs: [], images: [], templates: [], selectedLab: null, selectedNode: null, view: 'labs', mode: 'select', linkFrom: null, console: null, poller: null, zoom: 1, panX: 80, panY: 50, spaceHeld: false, contextNode: null, iconCatalogue: [], iconLoaded: false, placement: null, linkPort: null, dragging: false, linkDrag: null, selectedNodes: new Set(), inspectorTab: 'overview', annotationDrag: false, collapsedGroups: new Set(), explorerQuery: '', telemetry: null};
@@ -466,7 +467,10 @@ function onNodePointer(evt,dom,node){
  const lab=currentLab(),ids=[...state.selectedNodes],initial=new Map(lab.nodes.filter(n=>ids.includes(n.id)).map(n=>[n.id,{x:n.x,y:n.y}]));
  const sx=evt.clientX,sy=evt.clientY;let moved=false;state.dragging=true;dom.setPointerCapture(evt.pointerId);
  const move=e=>{const dx=(e.clientX-sx)/state.zoom,dy=(e.clientY-sy)/state.zoom;if(Math.abs(dx)>2||Math.abs(dy)>2)moved=true;
-  for(const [id,pos] of initial){const member=lab.nodes.find(n=>n.id===id);if(!member)continue;member.x=Math.max(0,Math.min(9900,Math.round(pos.x+dx)));member.y=Math.max(0,Math.min(9900,Math.round(pos.y+dy)));
+  // Apply one shared delta: multi-selected devices must keep their spacing
+  // while crossing the old artificial x=0 / y=0 origin.
+  const positions=translateSelection(initial,dx,dy);
+  for(const [id,pos] of positions){const member=lab.nodes.find(n=>n.id===id);if(!member)continue;member.x=pos.x;member.y=pos.y;
    const element=[...$('#nodesLayer').children].find(d=>d.dataset.id===id);if(element){element.style.left=`${member.x}px`;element.style.top=`${member.y}px`;}}
   renderWires(lab);
  };
@@ -491,7 +495,7 @@ function applyView(){
  stage.style.transform='none';
  $('#zoomValue').textContent=`${Math.round(state.zoom*100)}%`;
 }
-function worldPoint(clientX,clientY){const r=$('#canvasViewport').getBoundingClientRect();return {x:Math.max(0,Math.round((clientX-r.left-state.panX)/state.zoom)),y:Math.max(0,Math.round((clientY-r.top-state.panY)/state.zoom))};}
+function worldPoint(clientX,clientY){const r=$('#canvasViewport').getBoundingClientRect();return worldCoordinates(clientX,clientY,r,state.panX,state.panY,state.zoom);}
 function setZoom(next,clientX,clientY){
  const viewport=$('#canvasViewport'),r=viewport.getBoundingClientRect();const px=(clientX??(r.left+r.width/2))-r.left,py=(clientY??(r.top+r.height/2))-r.top;
  const beforeX=(px-state.panX)/state.zoom,beforeY=(py-state.panY)/state.zoom;

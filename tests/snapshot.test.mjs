@@ -18,3 +18,10 @@ test('snapshot filename sanitizes reserved filesystem characters',()=>{
   assert.equal(f,'NetLab_OSPF_BGP_тест_2026-11-16.png');
   assert.doesNotMatch(f,/[\\/:*?"<>|]/);
 });
+
+test('snapshot bounds include negative world coordinates',()=>{
+ const lab={nodes:[{x:-320,y:-240,name:'R1'},{x:120,y:180,name:'R2'}],annotations:[]};
+ const b=topologyBounds(lab);
+ assert.ok(b.minX<-320);assert.ok(b.minY<-240);
+ assert.ok(b.minX+b.width>120);assert.ok(b.minY+b.height>180);
+});

@@ -44,7 +44,7 @@ func validateAnnotation(a Annotation) error {
 	if utf8.RuneCountInString(a.Text) > 1000 {
 		return errors.New("текст аннотации слишком длинный")
 	}
-	if a.X < 0 || a.X > 10000 || a.Y < 0 || a.Y > 10000 {
+	if a.X < -10000 || a.X > 10000 || a.Y < -10000 || a.Y > 10000 {
 		return errors.New("координаты аннотации вне диапазона")
 	}
 	if a.Width < 80 || a.Width > 1200 || a.Height < 36 || a.Height > 800 {
@@ -136,6 +136,9 @@ func validName(s string) error {
 	return nil
 }
 func validateNode(n Node) error {
+	if n.X < -10000 || n.X > 10000 || n.Y < -10000 || n.Y > 10000 {
+		return errors.New("координаты устройства вне диапазона")
+	}
 	if err := validName(n.Name); err != nil {
 		return err
 	}

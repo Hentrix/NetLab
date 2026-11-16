@@ -21,3 +21,10 @@ test('Text objects and notes have different minimum sizes',()=>{
  const r=resizeAnnotationRect({kind:'text',x:10,y:10,width:160,height:60},'s',0,-100);
  assert.equal(r.height,36);
 });
+
+test('Notes may move and resize above the old y=0 boundary',()=>{
+ const original={kind:'note',x:5,y:5,width:230,height:140};
+ assert.deepEqual(resizeAnnotationRect(original,'',-20,-110),{x:-15,y:-105,width:230,height:140});
+ const top=resizeAnnotationRect(original,'n',0,-110);
+ assert.equal(top.y,-105);assert.equal(top.height,250);
+});
