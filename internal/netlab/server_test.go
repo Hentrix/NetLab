@@ -305,3 +305,63 @@ func TestPortStyleMetadataAndValidation(t *testing.T) {
 		t.Fatalf("invalid port style changed node: %q", got)
 	}
 }
+
+func TestBatchNodeCreationAndValidation(t *testing.T) {
+	s := newTestServer(t)
+	status, body := httpCall(t, s, "POST", "/api/labs", []byte(`{"name":"Batch topology"}`), true)
+	assertStatus(t, status, 201, body)
+	var l Lab
+	if err := json.Unmarshal(body, &l); err != nil {
+		t.Fatal(err)
+	}
+	id := newID()
+	s.store.mu.Lock()
+	s.store.State.Images = append(s.store.State.Images, Image{ID: id, Name: "test.qcow2", Format: "qcow2"})
+	if err := s.store.save(); err != nil {
+		t.Fatal(err)
+	}
+	s.store.mu.Unlock()
+	node := Node{Name: "MikroTik CHR", ImageID: id, RAM: 256, CPUs: 1, NICModel: "e1000", NICCount: 4, DiskBus: "ide", Kind: "router", X: 100, Y: 100}
+	batch := func(count int, n Node) (int, []byte) {
+		req, _ := json.Marshal(map[string]any{"count": count, "template": n})
+		return httpCall(t, s, "POST", "/api/labs/"+l.ID+"/nodes/batch", req, true)
+	}
+	status, body = batch(3, node)
+	assertStatus(t, status, 201, body)
+	var created struct {
+		Nodes []Node `json:"nodes"`
+	}
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	if len(created.Nodes) != 3 || created.Nodes[0].Name != "MikroTik CHR 1" || created.Nodes[1].Name != "MikroTik CHR 2" {
+		t.Fatalf("unexpected nodes: %+v", created.Nodes)
+	}
+	if created.Nodes[0].X == created.Nodes[1].X {
+		t.Fatal("nodes overlap")
+	}
+	status, body = batch(2, node)
+	assertStatus(t, status, 201, body)
+	_ = json.Unmarshal(body, &created)
+	if created.Nodes[0].Name != "MikroTik CHR 4" || created.Nodes[1].Name != "MikroTik CHR 5" {
+		t.Fatalf("names not unique: %+v", created.Nodes)
+	}
+	status, body = batch(33, node)
+	assertStatus(t, status, 400, body)
+	node.NICModel = "broken"
+	status, body = batch(2, node)
+	assertStatus(t, status, 400, body)
+	status, body = httpCall(t, s, "GET", "/api/labs/"+l.ID, nil, true)
+	assertStatus(t, status, 200, body)
+	_ = json.Unmarshal(body, &l)
+	if len(l.Nodes) != 5 {
+		t.Fatalf("failed request must not write nodes: got %d", len(l.Nodes))
+	}
+	reloaded, err := LoadStore(filepath.Join(s.data, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.State.Labs[0].Nodes) != 5 {
+		t.Fatal("batch nodes not persisted")
+	}
+}

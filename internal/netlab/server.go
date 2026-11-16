@@ -53,7 +53,7 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		respond(w, 200, map[string]any{"status": "ok", "version": "0.6.0"})
+		respond(w, 200, map[string]any{"status": "ok", "version": "0.6.4"})
 	})
 	mux.Handle("/api/", s.auth(http.HandlerFunc(s.api)))
 	mux.Handle("/", http.FileServer(http.Dir(s.web)))
@@ -382,6 +382,54 @@ func (s *Server) labsAPI(w http.ResponseWriter, r *http.Request, p []string) {
 	fail(w, 404, "неизвестная операция")
 }
 func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l *Lab) {
+	// Create multiple stopped devices atomically, without starting guest processes.
+	if len(p) == 4 && p[3] == "batch" && r.Method == http.MethodPost {
+		var req struct {
+			Template Node `json:"template"`
+			Count    int  `json:"count"`
+		}
+		if !decode(w, r, &req) {
+			return
+		}
+		if req.Count < 1 || req.Count > 32 {
+			fail(w, 400, "количество устройств должно быть от 1 до 32")
+			return
+		}
+		if req.Template.Kind == "" {
+			req.Template.Kind = "router"
+		}
+		if req.Template.NICModel == "" {
+			req.Template.NICModel = "virtio-net-pci"
+		}
+		if req.Template.DiskBus == "" {
+			req.Template.DiskBus = "virtio"
+		}
+		if req.Template.NICCount == 0 {
+			req.Template.NICCount = 16
+		}
+		if err := validateNode(req.Template); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		if findImage(&s.store.State, req.Template.ImageID) == nil {
+			fail(w, 404, "образ не найден")
+			return
+		}
+		added, err := buildNodeBatch(l.Nodes, req.Template, req.Count)
+		if err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		oldCount := len(l.Nodes)
+		l.Nodes = append(l.Nodes, added...)
+		if err := s.store.save(); err != nil {
+			l.Nodes = l.Nodes[:oldCount]
+			fail(w, 500, err.Error())
+			return
+		}
+		respond(w, 201, map[string]any{"nodes": added})
+		return
+	}
 	if len(p) == 3 && r.Method == "POST" {
 		var req Node
 		if !decode(w, r, &req) {
