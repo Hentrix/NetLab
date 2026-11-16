@@ -109,7 +109,7 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 		_ = logFile.Close()
 		transport.close()
 		cleanup()
-		return fmt.Errorf("запуск VPCS: %w", err)
+		return fmt.Errorf("запуск VPCS под netlab-vm: %w (проверьте systemd AmbientCapabilities=CAP_SETUID CAP_SETGID и sudo systemctl daemon-reload && sudo systemctl restart netlab)", err)
 	}
 	log.Printf("VPCS started: lab=%s node=%s pid=%d source=%d relay=%d", l.ID, n.ID, cmd.Process.Pid, sourcePort, transport.udp.LocalAddr().(*net.UDPAddr).Port)
 	_ = slave.Close()

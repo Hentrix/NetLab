@@ -21,4 +21,12 @@ export interface Template {
   ram?: number; cpus?: number; portStyle?: string; nicCount?: number;
   nicModel?: string; diskBus?: string
 }
-export interface HostSystem { qemu?: boolean; ovs?: boolean; vpcs?: boolean; kvm?: boolean }
+export interface HostSystem {
+  qemu?: boolean; ovs?: boolean; vpcs?: boolean; kvm?: boolean
+  qemuImg?: boolean; vmUser?: boolean; qemuSpawn?: boolean; qemuSpawnError?: string
+  vpcsSpawn?: boolean; vpcsSpawnError?: string
+}
+export interface HostMetrics {
+  cpuPercent?: number | null; memoryUsedMiB?: number
+  memoryTotalMiB?: number; savedAt?: string | null
+}

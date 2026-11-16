@@ -55,7 +55,7 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		respond(w, 200, map[string]any{"status": "ok", "version": "0.8.1"})
+		respond(w, 200, map[string]any{"status": "ok", "version": "0.8.2"})
 	})
 	mux.Handle("/api/", s.auth(http.HandlerFunc(s.api)))
 	mux.Handle("/", http.FileServer(http.Dir(s.web)))
@@ -144,13 +144,14 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		_, vpcsErr := exec.LookPath("vpcs")
 		_, userErr := user.Lookup("netlab-vm")
 		qemuSpawn, qemuSpawnError := probeQEMUSpawn()
+		vpcsSpawn, vpcsSpawnError := probeVPCSSpawn()
 		var kvm bool
 		if userErr == nil {
 			if cred, _, _, credErr := vmCredential(); credErr == nil {
 				kvm = canUseKVM(cred)
 			}
 		}
-		respond(w, 200, map[string]any{"qemu": q == nil, "ovs": ov == nil, "qemuImg": img == nil, "vmUser": userErr == nil, "kvm": kvm, "qemuSpawn": qemuSpawn, "qemuSpawnError": qemuSpawnError, "vpcs": vpcsErr == nil})
+		respond(w, 200, map[string]any{"qemu": q == nil, "ovs": ov == nil, "qemuImg": img == nil, "vmUser": userErr == nil, "kvm": kvm, "qemuSpawn": qemuSpawn, "qemuSpawnError": qemuSpawnError, "vpcs": vpcsErr == nil, "vpcsSpawn": vpcsSpawn, "vpcsSpawnError": vpcsSpawnError})
 		return
 	case "templates":
 		if r.Method != "GET" {

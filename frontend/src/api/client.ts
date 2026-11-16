@@ -29,11 +29,12 @@ export function portLabel(device: Device | undefined, index: number): string {
   if (style === 'fa') return `Fa0/${index}`
   return `${style}${index}`
 }
-export function availablePorts(nodes: Device[], links: Cable[], id: string): number[] {
+export function availablePorts(nodes: Device[], links: Cable[], id: string, excludeLink?: string): number[] {
   const device = nodes.find(node => node.id === id)
   if (!device) return []
   const used = new Set<number>()
   for (const cable of links) {
+    if (cable.id === excludeLink) continue
     if (cable.a === id) used.add(cable.aPort)
     if (cable.b === id) used.add(cable.bPort)
   }

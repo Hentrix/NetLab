@@ -20,3 +20,11 @@ test('JSON transport does not change the port numbers',()=>{
  const data={a:'1',b:'2',aPort:0,bPort:3}
  assert.deepEqual(JSON.parse(json(data)),data)
 })
+
+test('editing a cable frees only its own interface numbers in selectors',()=>{
+  const nodes=[{id:'left',nicCount:4},{id:'right',nicCount:4}]
+  const links=[{id:'current',a:'left',b:'right',aPort:2,bPort:3},{id:'other',a:'left',b:'right',aPort:0,bPort:0}]
+  assert.deepEqual(availablePorts(nodes,links,'left','current'),[1,2,3])
+  assert.deepEqual(availablePorts(nodes,links,'right','current'),[1,2,3])
+  assert.deepEqual(availablePorts(nodes,links,'left'),[1,3])
+})

@@ -19,8 +19,10 @@ User=root
 Group=root
 UMask=0027
 # Go spawns QEMU with syscall.Credential (root -> netlab-vm).
-# Preserve CAP_SETUID in the daemon across exec; other sandboxing stays active.
-AmbientCapabilities=CAP_SETUID
+# Launch QEMU/VPCS under netlab-vm: syscall.Credential changes UID, GID,
+# and supplementary groups. setgroups(2) requires CAP_SETGID.
+# Keep both capabilities in the API daemon; guest binaries drop them on exec.
+AmbientCapabilities=CAP_SETUID CAP_SETGID
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

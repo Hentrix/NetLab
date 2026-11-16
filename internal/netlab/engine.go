@@ -546,3 +546,33 @@ func probeQEMUSpawn() (bool, string) {
 	}
 	return true, ""
 }
+
+// probeVPCSSpawn exercises the same credentials and controlling-PTY setup as
+// StartVPCS, without spawning a simulator or touching network interfaces.
+// This catches missing CAP_SETGID / CAP_SETUID in the systemd service early.
+func probeVPCSSpawn() (bool, string) {
+	if _, err := exec.LookPath("vpcs"); err != nil {
+		return false, "VPCS не установлен: " + err.Error()
+	}
+	cred, _, _, err := vmCredential()
+	if err != nil {
+		return false, err.Error()
+	}
+	master, slave, err := openVPCSPTY()
+	if err != nil {
+		return false, "PTY: " + err.Error()
+	}
+	defer master.Close()
+	defer slave.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	// /usr/bin/true gives a harmless child exec path with the same SysProcAttr
+	// that the VPCS binary will receive. No guest is started.
+	cmd := exec.CommandContext(ctx, "/usr/bin/true")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred, Setsid: true, Setctty: true, Ctty: 0}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
+	if err := cmd.Run(); err != nil {
+		return false, fmt.Sprintf("смена пользователя или создание PTY: %v; проверьте CAP_SETUID и CAP_SETGID в netlab.service", err)
+	}
+	return true, ""
+}

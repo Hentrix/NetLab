@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { LayoutDashboard, HardDrive, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, Github, Pencil, LogOut, X } from 'lucide-vue-next'
+import { LayoutDashboard, HardDrive, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, Github, Pencil, LogOut, X, ChevronDown } from 'lucide-vue-next'
 import { useNetlabStore } from '@/stores/netlab'
 import { portLabel } from '@/api/client'
 import type { Device, Template } from '@/types'
 import TopologyCanvas from '@/components/TopologyCanvas.vue'
+import SystemOverview from '@/components/SystemOverview.vue'
+import { exportTopology } from '@/topology/snapshot'
 import TerminalDock from '@/components/TerminalDock.vue'
 const store=useNetlabStore()
 const tokenEntry=ref(store.token)
@@ -19,6 +21,14 @@ const selectedTab=ref<'overview'|'ports'>('overview')
 const terminal=ref<InstanceType<typeof TerminalDock>|null>(null)
 const selectedTemplate=computed(()=>store.templates.find(t=>t.id===templateID.value))
 const filteredNodes=computed(()=>store.activeLab?.nodes.filter(n=>n.name.toLowerCase().includes(search.value.toLowerCase()))||[])
+const deviceGroups=computed(()=>[
+  {id:'routers',title:'Маршрутизаторы',devices:filteredNodes.value.filter(n=>['router','switch','firewall'].includes(n.kind||''))},
+  {id:'endpoints',title:'Конечные устройства',devices:filteredNodes.value.filter(n=>!['router','switch','firewall'].includes(n.kind||''))}
+].filter(group=>group.devices.length))
+const folded=ref<Record<string,boolean>>({})
+const imageName=(device:Device)=>device.engine==='vpcs'?'VPCS · без образа':store.images.find(img=>img.id===device.imageId)?.name||device.kind||'QEMU'
+async function screenshot(){if(store.activeLab)try{await exportTopology(store.activeLab,dark.value)}catch(e){store.failure=(e as Error).message}}
+
 const selectedLinks=computed(()=>store.activeLab?.links.filter(l=>l.a===store.selectedID||l.b===store.selectedID)||[])
 const dark=computed(()=>theme.value==='dark')
 const liveStatus=computed(()=>store.live?'Сервер подключён':'Нет соединения')
@@ -69,9 +79,16 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
         <form class="login-card" @submit.prevent="login"><Router :size="34"/><h1>Вход в NetLab</h1><p>Токен администратора хранится только в текущей вкладке браузера.</p><label>Токен<input v-model="tokenEntry" type="password" autocomplete="off" required/></label><button class="primary" type="submit">Войти</button></form>
       </template>
       <template v-else-if="page==='labs'">
-        <header class="page-title"><div><h1>{{store.activeLab?.name||'Лаборатории'}}</h1><p>Редактор сетевой топологии · Vue 3 + Vue Flow</p></div><div class="header-commands" v-if="store.activeLab"><button @click="powerLab('start')"><Play :size="16"/> Запустить всё</button><button @click="powerLab('stop')"><Square :size="16"/> Остановить всё</button><button title="Обновить" @click="store.refresh()"><RotateCcw :size="16"/></button></div></header>
+        <header class="page-title"><div><h1>{{store.activeLab?.name||'Лаборатории'}}</h1><p>Редактор сетевой топологии · Vue 3 + Vue Flow</p></div><div class="header-commands" v-if="store.activeLab"><button @click="powerLab('start')"><Play :size="16"/> Запустить всё</button><button @click="powerLab('stop')"><Square :size="16"/> Остановить всё</button><button @click="screenshot" title="Сохранить топологию в PNG"><Camera :size="16"/> Снимок</button><button title="Обновить" @click="store.refresh()"><RotateCcw :size="16"/></button></div></header>
         <div v-if="store.activeLab" class="workspace">
-          <aside class="device-list"><header>Устройства <button title="Добавить устройство" @click="openAdd"><Plus :size="17"/></button></header><input v-model="search" placeholder="Поиск устройств" aria-label="Поиск устройств"/><div class="list-scroll"><button v-for="node in filteredNodes" :key="node.id" class="device-entry" :class="{selected:store.selectedID===node.id}" @click="store.selectedID=node.id"><img v-if="node.icon" :src="`/icons/${encodeURIComponent(node.icon)}`" alt=""/><component :is="kindIcon(node.kind)==='pc'?Monitor:kindIcon(node.kind)==='shield'?Shield:kindIcon(node.kind)==='server'?Server:Router" v-else :size="22"/><span><b>{{node.name}}</b><small>{{node.engine==='vpcs'?'VPCS':node.kind||'QEMU'}}</small></span><i :class="node.status"/></button></div><button class="add-row" @click="openAdd"><Plus :size="16"/> Добавить устройство</button></aside>
+          <aside class="device-list"><header>Устройства <button title="Добавить устройство" @click="openAdd"><Plus :size="17"/></button></header><input v-model="search" placeholder="Поиск устройств" aria-label="Поиск устройств"/><div class="list-scroll"><div v-for="group in deviceGroups" :key="group.id" class="device-category">
+            <button class="device-category-title" @click="folded[group.id]=!folded[group.id]" :aria-expanded="!folded[group.id]"><ChevronDown :size="14" class="device-category-chevron" :class="{folded:folded[group.id]}"/>{{group.title}}<small>{{group.devices.length}}</small></button>
+            <template v-if="!folded[group.id]"><button v-for="node in group.devices" :key="node.id" class="device-entry" :class="{selected:store.selectedID===node.id}" @click="store.selectedID=node.id">
+              <img v-if="node.icon" :src="`/icons/${encodeURIComponent(node.icon)}`" alt=""/>
+              <component :is="kindIcon(node.kind)==='pc'?Monitor:kindIcon(node.kind)==='shield'?Shield:kindIcon(node.kind)==='server'?Server:Router" v-else :size="22"/>
+              <span><b>{{node.name}}</b><small>{{imageName(node)}}</small></span><i :class="node.status"/>
+            </button></template>
+          </div></div><button class="add-row" @click="openAdd"><Plus :size="16"/> Добавить устройство</button></aside>
           <TopologyCanvas @console="consoleOpen" @add="openAdd" />
           <aside class="inspector"><template v-if="store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
             <template v-if="selectedTab==='overview'"><div class="inspector-content"><label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong><label>vCPU / RAM</label><strong>{{store.selectedNode.engine==='vpcs'?'—':`${store.selectedNode.cpus||1} / ${store.selectedNode.ram||256} МБ`}}</strong><label>Интерфейсы</label><strong>{{store.selectedNode.nicCount||16}}</strong></div><div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
@@ -82,7 +99,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
         <footer class="status-bar"><span><i :class="{ok:store.live}"/>{{liveStatus}}</span><span>{{store.activeLab?.nodes.length||0}} устройств</span><span>{{store.activeLab?.links.length||0}} соединений</span><span>NetLab · экспериментальный Vue-редактор</span></footer>
       </template>
       <template v-else-if="page==='images'"><div class="simple-page"><h1>Библиотека образов</h1><p>Диски QEMU остаются на сервере и доступны обоим интерфейсам.</p><div v-for="image in store.images" :key="image.id" class="list-row"><HardDrive :size="18"/> {{image.name}} <small>{{image.format}}</small></div><p>Загрузка образов и расширенные операции пока доступны в <a href="/">основном интерфейсе</a>.</p></div></template>
-      <template v-else><div class="simple-page"><h1>Состояние системы</h1><div v-for="(value,key) in store.system" :key="key" class="list-row"><Activity :size="17"/> {{key}} <b>{{value?'Готово':'Нет'}}</b></div></div></template>
+      <template v-else><SystemOverview /></template>
       <div v-if="store.failure" role="alert" class="error-toast" @click="store.failure=''">{{store.failure}} <X :size="16"/></div>
     </main>
     <TerminalDock ref="terminal" :theme="theme" />

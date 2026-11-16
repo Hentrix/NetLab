@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api, json } from '@/api/client'
-import type { Cable, Device, ImageRecord, Lab, Template, HostSystem } from '@/types'
+import type { Cable, Device, ImageRecord, Lab, Template, HostSystem, HostMetrics } from '@/types'
 
 export const useNetlabStore = defineStore('netlab', () => {
   const token = ref(sessionStorage.getItem('netlabToken') || '')
@@ -9,6 +9,8 @@ export const useNetlabStore = defineStore('netlab', () => {
   const images = ref<ImageRecord[]>([])
   const templates = ref<Template[]>([])
   const system = ref<HostSystem>({})
+  const metrics = ref<HostMetrics | null>(null)
+  const checking = ref(false)
   const labID = ref<string | null>(null)
   const selectedID = ref<string | null>(null)
   const busy = ref(false)
@@ -38,13 +40,24 @@ export const useNetlabStore = defineStore('netlab', () => {
     try {
       await refresh()
       if (!live.value) return
-      const [imgs, tpls, sys] = await Promise.all([
+      const [imgs, tpls, sys, met] = await Promise.all([
         api<ImageRecord[]>(token.value,'images'), api<Template[]>(token.value,'templates'),
-        api<HostSystem>(token.value,'system')
+        api<HostSystem>(token.value,'system'), api<HostMetrics>(token.value,'metrics')
       ])
-      images.value = imgs; templates.value = tpls; system.value = sys
+      images.value = imgs; templates.value = tpls; system.value = sys; metrics.value = met
     } catch(e) { failure.value = (e as Error).message }
     finally { busy.value = false }
+  }
+  async function refreshSystem() {
+    if (!token.value || checking.value) return
+    checking.value = true
+    try {
+      const [sys, met] = await Promise.all([
+        api<HostSystem>(token.value, 'system'), api<HostMetrics>(token.value, 'metrics')
+      ])
+      system.value = sys; metrics.value = met
+    } catch (error) { failure.value = (error as Error).message }
+    finally { checking.value = false }
   }
   async function createLab(name: string) {
     const item = await action(()=>api<Lab>(token.value,'labs',{method:'POST',body:json({name})}))
@@ -85,7 +98,7 @@ export const useNetlabStore = defineStore('netlab', () => {
   async function labPower(operation: 'start' | 'stop') {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
   }
-  return {token,labs,images,templates,system,labID,selectedID,busy,failure,live,activeLab,selectedNode,
-    authenticate,logout,refresh,bootstrap,createLab,renameLab,addNode,moveNode,nodePower,renameNode,
+  return {token,labs,images,templates,system,metrics,checking,labID,selectedID,busy,failure,live,activeLab,selectedNode,
+    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,renameLab,addNode,moveNode,nodePower,renameNode,
     removeNode,connect,disconnect,updateCable,labPower}
 })
