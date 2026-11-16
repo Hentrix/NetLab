@@ -1,4 +1,5 @@
 import {VTBuffer} from './terminal-vt.mjs';
+import {createXtermSession,xtermAvailable} from './xterm-support.mjs';
 
 const esc=(id)=>encodeURIComponent(id);
 const ic={terminal:'<path d="m4 7 5 5-5 5M12 17h8"/>',minus:'<path d="M4 12h16"/>',close:'<path d="M5 5l14 14M19 5L5 19"/>',maximize:'<rect x="4" y="4" width="16" height="16" rx="2"/>',connect:'<path d="M7 7a8 8 0 0 1 11-1M18 2v4h-4M17 17a8 8 0 0 1-11 1M6 22v-4h4"/>',grip:'<path d="M4 19h15V4M10 19l9-9M16 19l3-3"/>'};
@@ -16,6 +17,13 @@ export class ConsoleWorkspace {
   this.root=root;this.getToken=getToken;this.notify=notify;this.tabs=new Map();this.active=null;this.minimized=false;this.maximized=false;
   this.win=root.querySelector('#consoleWindow');this.tabBar=root.querySelector('#consoleTabs');this.output=root.querySelector('#consoleOutput');this.input=root.querySelector('#consoleKeyInput');this.status=root.querySelector('#consoleStatus');this.title=root.querySelector('#consoleTitle');this.dock=root.querySelector('#consoleRestore');
   this.initControls();
+  this.screen=root.querySelector('#consoleScreen');
+  this.screenContent=root.querySelector('#consoleOutput');
+  this.themeObserver=new MutationObserver(()=>this.updateTheme());
+  this.themeObserver.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+  this.resizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(()=>this.scheduleFit()):null;
+  this.resizeObserver?.observe(this.screen);
+  window.addEventListener('resize',()=>this.scheduleFit());
  }
  key(lab,node){return `${lab}:${node}`;}
  open({lab,node,name,engine='qemu'}){
@@ -23,22 +31,22 @@ export class ConsoleWorkspace {
   if(!this.tabs.has(key)){
    if(this.tabs.size>=12){this.notify('Открыто максимально допустимое число консолей (12)',true);return;}
    const tab={key,lab,node,name,engine,term:new VTBuffer(),cursor:0,decoder:new TextDecoder('utf-8'),abort:new AbortController(),status:'connecting',error:'',pending:'',sendTimer:null,closed:false,started:false,unread:false};
-   this.tabs.set(key,tab);this.stream(tab);
+   this.tabs.set(key,tab);
   }else{
    this.tabs.get(key).name=name;
   }
-  this.active=key;this.minimized=false;this.root.classList.remove('hidden','minimized');this.renderTabs();this.renderOutput();this.input.focus({preventScroll:true});
+  this.active=key;this.minimized=false;this.root.classList.remove('hidden','minimized');this.renderTabs();this.renderOutput();if(!this.tabs.get(key).started)this.stream(this.tabs.get(key));this.focusActive();
  }
- closeTab(key=this.active){const tab=this.tabs.get(key);if(!tab)return;tab.closed=true;tab.abort.abort();clearTimeout(tab.sendTimer);this.tabs.delete(key);
+ closeTab(key=this.active){const tab=this.tabs.get(key);if(!tab)return;tab.closed=true;tab.abort.abort();clearTimeout(tab.sendTimer);this.destroyXterm(tab);this.tabs.delete(key);
   if(this.active===key)this.active=this.tabs.keys().next().value||null;
   if(!this.tabs.size){this.closeAll();return;}
   this.renderTabs();this.renderOutput();
  }
- closeAll(){for(const tab of this.tabs.values()){tab.closed=true;tab.abort.abort();clearTimeout(tab.sendTimer);}this.tabs.clear();this.active=null;this.root.classList.add('hidden');this.root.classList.remove('minimized');}
- select(key){if(!this.tabs.has(key))return;this.active=key;this.tabs.get(key).unread=false;this.minimized=false;this.root.classList.remove('minimized');this.renderTabs();this.renderOutput();this.input.focus({preventScroll:true});}
+ closeAll(){for(const tab of this.tabs.values()){tab.closed=true;tab.abort.abort();clearTimeout(tab.sendTimer);this.destroyXterm(tab);}this.tabs.clear();this.active=null;this.root.classList.add('hidden');this.root.classList.remove('minimized');}
+ select(key){if(!this.tabs.has(key))return;this.active=key;this.tabs.get(key).unread=false;this.minimized=false;this.root.classList.remove('minimized');this.renderTabs();this.renderOutput();this.focusActive();}
  minimize(){this.minimized=true;this.root.classList.add('minimized');this.dock.focus({preventScroll:true});}
- restore(){this.minimized=false;this.root.classList.remove('minimized');this.input.focus({preventScroll:true});this.renderOutput();}
- toggleMaximize(){this.maximized=!this.maximized;this.root.classList.toggle('maximized',this.maximized);this.root.querySelector('#consoleMaximize').title=this.maximized?'Вернуть размер':'Развернуть';}
+ restore(){this.minimized=false;this.root.classList.remove('minimized');this.renderOutput();this.focusActive();}
+ toggleMaximize(){this.maximized=!this.maximized;this.root.classList.toggle('maximized',this.maximized);this.root.querySelector('#consoleMaximize').title=this.maximized?'Вернуть размер':'Развернуть';this.scheduleFit();}
  renderTabs(){this.tabBar.replaceChildren();
   for(const tab of this.tabs.values()){
    const item=document.createElement('div');item.className='console-tab'+(tab.key===this.active?' is-active':'');item.setAttribute('role','presentation');
@@ -52,17 +60,54 @@ export class ConsoleWorkspace {
   }
   this.root.querySelector('#consoleTabCount').textContent=String(this.tabs.size);
  }
+ destroyXterm(tab){if(tab.session){tab.session.dispose();tab.session=null;tab.pane?.remove();tab.pane=null;}}
+ createNativeTerminal(tab){
+  if(tab.session || !xtermAvailable(window))return;
+  const pane=document.createElement('div');pane.className='xterm-session';pane.hidden=true;
+  this.screen.append(pane);tab.pane=pane;
+  // Only open after the popup is visible to guarantee a valid initial viewport.
+  pane.hidden=false;
+  const session=createXtermSession(pane,data=>this.sendTo(tab,data),document.documentElement.dataset.theme,window);
+  if(!session){pane.remove();tab.pane=null;return;}
+  tab.session=session;
+  tab.term=session.terminal;
+  tab.term.attachCustomKeyEventHandler(event=>{
+    if(event.ctrlKey && event.key==='Tab' && event.type==='keydown'){
+      event.preventDefault();const keys=[...this.tabs.keys()];const index=keys.indexOf(tab.key);
+      this.select(keys[(index+(event.shiftKey?-1:1)+keys.length)%keys.length]);return false;
+    }
+    return true;
+  });
+ }
+ scheduleFit(){if(this.fitPending)return;this.fitPending=true;
+  requestAnimationFrame(()=>{this.fitPending=false;const tab=this.tabs.get(this.active);if(tab?.session&&!this.minimized){try{tab.session.fit();tab.session.refresh();}catch(error){console.warn('xterm fit',error);}}});
+ }
+ updateTheme(){const theme=document.documentElement.dataset.theme;
+  for(const tab of this.tabs.values())tab.session?.theme(theme);
+  this.scheduleFit();
+ }
+ focusActive(){const tab=this.tabs.get(this.active);
+  if(tab?.session){tab.session.focus();this.scheduleFit();}else this.input.focus({preventScroll:true});
+ }
  renderOutput(){const tab=this.tabs.get(this.active);if(!tab)return;
   this.title.textContent=tab.name;
-  this.output.innerHTML=tab.term.toHTML();
-  this.output.parentElement.scrollTop=this.output.parentElement.scrollHeight;
+  this.createNativeTerminal(tab);
+  for(const other of this.tabs.values())if(other.pane)other.pane.hidden=other.key!==this.active;
+  const native=!!tab.session;
+  this.output.hidden=native;this.input.hidden=native;
+  if(native){this.scheduleFit();}
+  else {
+    this.output.innerHTML=tab.term.toHTML();
+    this.output.parentElement.scrollTop=this.output.parentElement.scrollHeight;
+  }
   this.renderStatus();
  }
  renderStatus(){const tab=this.tabs.get(this.active);if(!tab)return;this.status.textContent=tab.status==='online'?`${tab.engine==='vpcs'?'VPCS':'Serial'} · соединение активно`:tab.status==='connecting'?'Подключение к консоли…':`Ожидание сервера: ${tab.error||'нет соединения'}`;
   this.status.className='console-connection '+tab.status;
  }
- onOutput(tab,chunk){tab.term.write(chunk);if(tab.key===this.active&&!this.minimized){const parent=this.output.parentElement;const follow=parent.scrollHeight-parent.scrollTop-parent.clientHeight<90;
-   // Coalesce bursts of terminal output in one animation frame.
+ onOutput(tab,chunk){tab.term.write(chunk);
+  if(tab.session){if(tab.key!==this.active||this.minimized){if(!tab.unread){tab.unread=true;this.renderTabs();}}return;}
+  if(tab.key===this.active&&!this.minimized){const parent=this.output.parentElement;const follow=parent.scrollHeight-parent.scrollTop-parent.clientHeight<90;
    if(!tab.paintPending){tab.paintPending=true;requestAnimationFrame(()=>{tab.paintPending=false;if(tab.key!==this.active||this.minimized)return;this.output.innerHTML=tab.term.toHTML();if(follow)parent.scrollTop=parent.scrollHeight;});}
   }else{tab.unread=true;this.renderTabs();}}
  async stream(tab){if(tab.started)return;tab.started=true;
@@ -89,14 +134,19 @@ export class ConsoleWorkspace {
     if(payload.chunk){const binary=atob(payload.chunk);const array=Uint8Array.from(binary,c=>c.charCodeAt(0));this.onOutput(tab,tab.decoder.decode(array,{stream:true}));}
   }catch(error){tab.error='повреждённый блок терминала';}
  }
- send(sequence){const tab=this.tabs.get(this.active);if(!tab||tab.closed||!sequence)return;
-  tab.pending+=sequence;if(tab.pending.length>4096)tab.pending=tab.pending.slice(0,4096);
+ send(sequence){this.sendTo(this.tabs.get(this.active),sequence);}
+ sendTo(tab,sequence){if(!tab||tab.closed||!sequence)return;
+  if(tab.pending.length+sequence.length>1_000_000){this.notify('Вставка слишком большая (макс. 1 МБ)',true);return;}
+  tab.pending+=sequence;
   if(!tab.sendTimer)tab.sendTimer=setTimeout(()=>this.flush(tab),18);
  }
  async flush(tab){clearTimeout(tab.sendTimer);tab.sendTimer=null;if(!tab.pending||tab.closed)return;
-  const text=tab.pending;tab.pending='';
+  // Never lose the beginning of a paste: send it in ordered 4 KiB chunks.
+  const text=tab.pending.slice(0,4096);tab.pending=tab.pending.slice(4096);
+  if(tab.pending.length&&!tab.sendTimer)tab.sendTimer=setTimeout(()=>this.flush(tab),18);
   // Guarantee key order even if a prior POST is still in flight.
   tab.sendChain=(tab.sendChain||Promise.resolve()).then(async()=>{
+   if(tab.closed)return;
    const response=await fetch(`/api/labs/${esc(tab.lab)}/nodes/${esc(tab.node)}/console`,{method:'POST',headers:{Authorization:`Bearer ${this.getToken()}`,'Content-Type':'application/json'},body:JSON.stringify({text})});
    if(!response.ok)throw Error(`ввод: HTTP ${response.status}`);
   }).catch(error=>{tab.status='offline';tab.error=error.message;if(tab.key===this.active)this.renderStatus();});
@@ -107,7 +157,7 @@ export class ConsoleWorkspace {
   this.root.querySelector('#consoleMaximize').onclick=()=>this.toggleMaximize();
   this.dock.onclick=()=>this.restore();
   this.root.querySelector('#consoleReconnect').onclick=()=>{const tab=this.tabs.get(this.active);if(!tab)return;this.closeTab(tab.key);this.open({lab:tab.lab,node:tab.node,name:tab.name,engine:tab.engine});};
-  const screen=this.root.querySelector('#consoleScreen');screen.addEventListener('click',()=>{if(window.getSelection()?.toString())return;this.input.focus({preventScroll:true});});
+  const screen=this.root.querySelector('#consoleScreen');screen.addEventListener('click',()=>{if(window.getSelection()?.toString())return;this.focusActive();});
   this.input.addEventListener('keydown',event=>{
    if(event.ctrlKey&&event.key==='Tab'){event.preventDefault();const keys=[...this.tabs.keys()];const idx=keys.indexOf(this.active);this.select(keys[(idx+(event.shiftKey?-1:1)+keys.length)%keys.length]);return;}
    if(event.ctrlKey&&event.key.toLowerCase()==='c'&&window.getSelection()?.toString())return;

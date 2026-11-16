@@ -5,3 +5,8 @@
 .idea/
 .vscode/
 .DS_Store
+
+# Frontend dependencies and generated Vue assets
+frontend/node_modules/
+frontend/dist/
+web/next/

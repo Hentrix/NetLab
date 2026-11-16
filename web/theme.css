@@ -296,3 +296,52 @@
 :root[data-theme="dark"] .nl-dropdown-option:hover,:root[data-theme="dark"] .nl-dropdown-option.is-highlighted {background:#344e65;color:#edf7ff;}
 :root[data-theme="dark"] .nl-dropdown-option.is-selected {background:#35546e;color:#f1faff;}
 :root[data-theme="dark"] .nl-dropdown-empty {color:#94aabb;}
+
+/* v0.7.4: one unscaled grid on the viewport only. The stage follows zoom but
+   is transparent, so there is no second, enlarged lattice in dark mode. */
+:root .canvas-viewport {
+  background-color: #ffffff;
+  background-image: radial-gradient(circle, #d3dce1 0.85px, transparent 1.05px);
+  background-size: 20px 20px;
+  background-position: 0 0;
+}
+:root[data-theme="dark"] .canvas-viewport {
+  background-color: var(--nl-canvas);
+  background-image: radial-gradient(circle, var(--nl-grid) 0.85px, transparent 1.05px);
+  background-size: 20px 20px;
+  background-position: 0 0;
+}
+:root .canvas-viewport .stage,
+:root[data-theme="dark"] .canvas-viewport .stage {
+  background: transparent !important;
+  background-image: none !important;
+}
+/* Native xterm.js keeps one independent, GPU-friendly terminal per tab. */
+.console-screen { padding: 0; }
+.xterm-session { position:absolute;inset:0;padding:9px 12px;box-sizing:border-box;overflow:hidden; }
+.xterm-session[hidden] { display:none !important; }
+.xterm-session .xterm {height:100%;}
+.console-screen .terminal-output:not([hidden]) {padding:12px 15px 20px;}
+:root[data-theme="light"] .console-window {background:#fbfdff;color:#23374c;border-color:#bccbd9;box-shadow:0 15px 54px #182f4550;}
+:root[data-theme="light"] .console-header {background:#e5edf4;border-color:#cedbe5;}
+:root[data-theme="light"] .console-header-title {color:#24384c;}
+:root[data-theme="light"] .console-header-title svg {color:#37698e;}
+:root[data-theme="light"] .console-header-hint {color:#758b9f;}
+:root[data-theme="light"] .console-window-controls button {color:#4b647a;}
+:root[data-theme="light"] .console-window-controls button:hover {background:#cbdce9;color:#1c3448;}
+:root[data-theme="light"] #consoleCloseAll:hover {background:#b75b66;color:white;}
+:root[data-theme="light"] .console-tabs {background:#e7eff5;border-color:#cadbe7;}
+:root[data-theme="light"] .console-tab {background:#d6e5f0;border-color:#c2d5e4;}
+:root[data-theme="light"] .console-tab.is-active {background:#ffffff;border-color:#93b2cc;}
+:root[data-theme="light"] .console-tab-select {color:#486277;}
+:root[data-theme="light"] .console-tab.is-active .console-tab-select {color:#173956;}
+:root[data-theme="light"] .console-tab-close {color:#607d95;}
+:root[data-theme="light"] .console-tab-close:hover {background:#b8cedf;color:#203c54;}
+:root[data-theme="light"] .console-screen {background:#ffffff;color:#223748;scrollbar-color:#c9d6e1 #f7fbfd;}
+:root[data-theme="light"] .terminal-output {color:#283a4d;}
+:root[data-theme="light"] .console-statusbar {background:#edf4f9;border-color:#cbdbe7;color:#5b7386;}
+:root[data-theme="light"] .console-shortcuts {color:#738ba0;}
+:root[data-theme="light"] #consoleReconnect {color:#2c6c9e;}
+:root[data-theme="light"] .console-restore {background:#e5eff7;color:#25405a;border-color:#9fbcd2;}
+:root[data-theme="light"] .console-tab-count {background:#b4d0e4;color:#183952;}
+:root[data-theme="light"] .terminal-caret {background:#304d67;color:#fff;}

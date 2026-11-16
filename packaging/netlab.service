@@ -7,9 +7,10 @@ Requires=openvswitch-switch.service
 
 [Service]
 Type=simple
+Environment=NETLAB_LISTEN=0.0.0.0:8080
 EnvironmentFile=/etc/netlab/netlab.env
 WorkingDirectory=/opt/netlab
-ExecStart=/usr/local/bin/netlab -listen 127.0.0.1:8080 -data /var/lib/netlab -web /opt/netlab/web
+ExecStart=/usr/local/bin/netlab -listen ${NETLAB_LISTEN} -data /var/lib/netlab -web /opt/netlab/web
 Restart=always
 # A transient clean exit must not leave the UI offline; explicit systemctl stop still stops it.
 RestartSec=3s

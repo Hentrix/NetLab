@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address; public exposure requires HTTPS/auth proxy")
+	listen := flag.String("listen", "0.0.0.0:8080", "HTTP listen address; public exposure requires HTTPS/auth proxy")
 	data := flag.String("data", "./data", "state/images/runtime directory")
 	web := flag.String("web", "./web", "static web directory")
 	flag.Parse()
@@ -28,6 +28,17 @@ func main() {
 	}
 	srv := &http.Server{Addr: *listen, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 16}
 	log.Printf("NetLab MVP listening on http://%s", *listen)
+	// The VPCS PTY may trigger SIGHUP in the daemon's process group on some
+	// virtualized hosts. A terminal hangup must never stop the HTTP control API.
+	// Keep handling SIGTERM/SIGINT normally for systemd shutdown.
+	hup := make(chan os.Signal, 8)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+	go func() {
+		for range hup {
+			log.Print("NetLab received SIGHUP; ignoring terminal hangup")
+		}
+	}()
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
