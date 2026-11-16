@@ -3,6 +3,7 @@ import {anchorFor,layoutParallelCables} from './cable-geometry.mjs';
 import {deviceStatusLabel,deviceStatusStyle} from './device-status.mjs';
 import {annotationLimits,resizeAnnotationRect,MIN_FITTED_FONT_PX} from './annotation-layout.mjs';
 import {downloadTopologyPNG} from './topology-snapshot.mjs';
+import {selectionForContextMenu,shouldClearCanvasSelection} from './context-selection.mjs';
 import {translateSelection,worldCoordinates} from './canvas-coordinates.mjs';
 const $ = (q, root = document) => root.querySelector(q);
 const el = (tag, cls = '', text = '') => { const item = document.createElement(tag); if (cls) item.className = cls; item.textContent = text; return item; };
@@ -101,6 +102,17 @@ function updateExplorerSelection(){
     row.classList.toggle('active',row.dataset.nodeId===state.selectedNode||state.selectedNodes.has(row.dataset.nodeId));
   }
 }
+function selectNodeForContextMenu(node){
+  // Right-click on a member of the selection keeps its other members selected.
+  // Right-click on a different device switches to that device only.
+  state.selectedNodes=selectionForContextMenu(state.selectedNodes,node.id);
+  state.selectedNode=state.selectedNodes.size===1?node.id:null;
+  state.selectedAnnotation=null;
+  updateExplorerSelection();
+  for(const child of $('#nodesLayer').children)child.classList.toggle('active',state.selectedNodes.has(child.dataset.id));
+  for(const child of $('#annotationsLayer').children)child.classList.remove('is-selected');
+  renderDetails(currentLab());
+}
 function focusNode(node){
   if(state.mode==='pan'||state.spaceHeld) return;
   state.selectedNode=node.id;state.selectedAnnotation=null;state.selectedNodes=new Set([node.id]);
@@ -132,6 +144,12 @@ function renderExplorer(lab){
       const copy=el('div','explorer-device-copy');copy.append(el('strong','',node.name),el('small','',getImageName(node)||'Без образа'));
       item.append(art,copy,el('span','explorer-status '+(node.status==='running'?'is-running':node.status==='error'?'is-error':'is-stopped')));
       item.onclick=()=>focusNode(node);
+      item.addEventListener('contextmenu',e=>{
+        e.preventDefault();e.stopPropagation();
+        if(state.mode==='pan'||state.spaceHeld)return;
+        selectNodeForContextMenu(node);
+        showNodeContext(e.clientX,e.clientY,node,{includeCable:false});
+      });
       item.ondragstart=e=>{if(state.mode==='pan'){e.preventDefault();return;}e.dataTransfer.setData('application/x-netlab-node',node.id);e.dataTransfer.effectAllowed='move';};
       section.append(item);
     }
@@ -354,7 +372,7 @@ function renderCanvas(lab){
    dom.title=`${node.name} · ${node.status==='running'?'Запущен':'Остановлен'} · Двойной клик: консоль`;
    dom.addEventListener('pointerdown',evt=>onNodePointer(evt,dom,node));
    dom.addEventListener('dblclick',e=>{e.stopPropagation();if(state.mode==='pan'||state.spaceHeld)return;if(node.status==='running')openConsole(node);else toast('Сначала запустите устройство');});
-   dom.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();if(state.mode==='pan'||state.spaceHeld)return;state.selectedNode=node.id;state.selectedNodes=new Set([node.id]);renderDetails(lab);showNodeContext(e.clientX,e.clientY,node);});
+   dom.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();if(state.mode==='pan'||state.spaceHeld)return;selectNodeForContextMenu(node);showNodeContext(e.clientX,e.clientY,node);});
    canvas.append(dom);
  }
 }
@@ -690,14 +708,14 @@ function showContext(x,y,items){
  menu.style.left=`${Math.max(6,Math.min(maxX,x))}px`;menu.style.top=`${Math.max(6,Math.min(maxY,y))}px`;
 }
 function hideContext(){$('#canvasContext').classList.add('hidden');}
-function showNodeContext(x,y,node){
+function showNodeContext(x,y,node,{includeCable=true}={}){
  const running=node.status==='running',lab=currentLab();
  if(state.selectedNodes.size>1 && state.selectedNodes.has(node.id)) return showSelectionContext(x,y);
  showContext(x,y,[
   {icon:'›_',label:'Открыть консоль',disabled:!running,action:()=>openConsole(node)},
   {icon:running?'■':'▶',label:running?'Остановить':'Запустить',action:async()=>{await request(`labs/${lab.id}/nodes/${node.id}/${running?'stop':'start'}`,{method:'POST'});refresh();}},
   {separator:true},
-  {icon:'↝',label:'Протянуть кабель',action:()=>{setMode('link');state.linkFrom=node.id;renderLab();$('#editorHint').textContent=`Источник: ${node.name} · выберите второе устройство`; }},
+  ...(includeCable?[{icon:'↝',label:'Протянуть кабель',action:()=>{setMode('link');state.linkFrom=node.id;renderLab();$('#editorHint').textContent=`Источник: ${node.name} · выберите второе устройство`; }}]:[]),
   {icon:'✎',label:'Переименовать',action:()=>showRename(node)},
   {icon:'⇄',label:'Интерфейсы и скорости',action:()=>showPortStyle(node)},
   {icon:'▧',label:'Выбрать иконку',action:()=>openIconPicker(node.icon||iconFor(node),async file=>{const ok=await request(`labs/${lab.id}/nodes/${node.id}`,{method:'PATCH',body:json({icon:file})});if(ok)refresh();})},
@@ -824,7 +842,7 @@ function setupCanvas(){
    const done=v=>{viewport.removeEventListener('pointermove',move);viewport.removeEventListener('pointerup',done);viewport.removeEventListener('pointercancel',done);viewport.classList.remove('panning');if(viewport.hasPointerCapture(v.pointerId))viewport.releasePointerCapture(v.pointerId);};
    viewport.addEventListener('pointermove',move);viewport.addEventListener('pointerup',done);viewport.addEventListener('pointercancel',done);return;
   }
-  if(e.button!==0)return;
+  if(!shouldClearCanvasSelection(e.button))return;
   if(state.mode==='marquee'||state.mode==='note'){beginAreaTool(e,state.mode,viewport);return;}
   if(state.mode==='text'){
    const point=worldPoint(e.clientX,e.clientY);setMode('select');showAnnotationDialog({kind:'text',text:'',...point,width:245,height:52});return;
