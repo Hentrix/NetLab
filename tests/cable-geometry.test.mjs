@@ -88,3 +88,13 @@ test('Port labels move only along each cable when crowded',()=>{
   }
  }
 });
+
+test('All four parallel port labels use one aligned column per device',()=>{
+ const lab={nodes:[node('a',10,60),node('b',490,60)],links:Array.from({length:4},(_,i)=>link('c'+i,'a','b',i,3-i))};
+ const layout=layoutParallelCables(lab),badges=layoutPortBadges(lab,layout,(_n,p)=>'ether'+(p+1));
+ const left=lab.links.map(ln=>badges.get(ln.id).a),right=lab.links.map(ln=>badges.get(ln.id).b);
+ for(const list of [left,right]) {
+  assert.equal(new Set(list.map(p=>Math.round(p.x*1e6))).size,1,'port labels stagger along same side');
+  for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++)assert.equal(overlap(box(list[i]),box(list[j])),0,'aligned labels overlap');
+ }
+});

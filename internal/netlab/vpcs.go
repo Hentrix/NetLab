@@ -3,7 +3,8 @@ package netlab
 import (
 	"errors"
 	"fmt"
-	"io"
+	"hash/fnv"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,12 +12,17 @@ import (
 	"syscall"
 )
 
-// vpcsArgs uses a single PC and the persistent TAP created for that node.
-// No QEMU image, KVM or libvirt is involved.
-func vpcsArgs(tap string) []string { return []string{"-i", "1", "-e", "-d", tap} }
+// Debian 13 ships VPCS 0.5b2. UDP mode is supported by both it and newer
+// VPCS versions, avoiding the old TAP/TTY limitations of -e -d.
+func vpcsArgs(sourcePort, relayPort, macOffset int) []string {
+	return []string{"-i", "1", "-u", "-s", strconv.Itoa(sourcePort), "-c", strconv.Itoa(relayPort), "-t", "127.0.0.1", "-m", strconv.Itoa(macOffset)}
+}
+func vpcsMACOffset(id string) int {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(id))
+	return int(hash.Sum32() % 240)
+}
 
-// StartVPCS is an experimental VPCS adapter. It runs the Debian vpcs binary
-// as netlab-vm and attaches its one TAP to NetLab's existing isolated OVS L2.
 func (e *Engine) StartVPCS(l Lab, n Node) error {
 	if n.Engine != "vpcs" || portCapacity(&n) != 1 {
 		return errors.New("VPCS требует ровно один Ethernet-порт")
@@ -31,12 +37,12 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	k := key(l.ID, n.ID)
-	if i := e.instances[k]; i != nil {
-		if i.status == "running" {
+	if existing := e.instances[k]; existing != nil {
+		if existing.status == "running" {
 			return nil
 		}
 		select {
-		case <-i.done:
+		case <-existing.done:
 		default:
 			return errors.New("предыдущий процесс VPCS ещё завершается")
 		}
@@ -61,59 +67,78 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 		cleanup()
 		return err
 	}
+	transport, err := newVPCSTransport(tap)
+	if err != nil {
+		cleanup()
+		return fmt.Errorf("VPCS UDP↔TAP: %w", err)
+	}
+	portHold, sourcePort, err := reserveVPCSPort()
+	if err != nil {
+		transport.close()
+		cleanup()
+		return err
+	}
+	master, slave, err := openVPCSPTY()
+	if err != nil {
+		_ = portHold.Close()
+		transport.close()
+		cleanup()
+		return err
+	}
 	logFile, err := os.OpenFile(filepath.Join(runtime, "vpcs.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
 	if err != nil {
+		_ = slave.Close()
+		_ = master.Close()
+		_ = portHold.Close()
+		transport.close()
 		cleanup()
 		return err
 	}
-	cmd := exec.Command("vpcs", vpcsArgs(tap)...)
+	_, _ = fmt.Fprintf(logFile, "\n[NetLab] VPCS UDP: source=%d relay=%d tap=%s\n", sourcePort, transport.udp.LocalAddr().(*net.UDPAddr).Port, tap)
+	cmd := exec.Command("vpcs", vpcsArgs(sourcePort, transport.udp.LocalAddr().(*net.UDPAddr).Port, vpcsMACOffset(n.ID))...)
 	cmd.Dir = runtime
-	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred, Setpgid: true}
-	cmd.Stderr = logFile
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		_ = logFile.Close()
-		cleanup()
-		return err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		_ = stdin.Close()
-		_ = logFile.Close()
-		cleanup()
-		return err
-	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred, Setsid: true, Setctty: true, Ctty: 0}
+	cmd.Stdin = slave
+	cmd.Stdout = slave
+	cmd.Stderr = slave
+	_ = portHold.Close() // release reserved UDP port immediately before spawn
 	if err = cmd.Start(); err != nil {
-		_ = stdin.Close()
-		_ = stdout.Close()
+		_ = slave.Close()
+		_ = master.Close()
 		_ = logFile.Close()
+		transport.close()
 		cleanup()
 		return fmt.Errorf("запуск VPCS: %w", err)
 	}
-	_ = logFile.Close()
-	ins := &Instance{cmd: cmd, done: make(chan struct{}), engine: "vpcs", taps: []string{tap}, status: "running", console: &Console{writer: stdin}}
+	_ = slave.Close()
+	transport.start(sourcePort)
+	ins := &Instance{cmd: cmd, done: make(chan struct{}), engine: "vpcs", taps: []string{tap}, status: "running", console: &Console{writer: master}, vpcsTransport: transport}
 	e.instances[k] = ins
-	ins.console.append([]byte("[NetLab] VPCS запущен, консоль подключается…\n"))
+	ins.console.append([]byte("[NetLab] VPCS: консоль PTY, Ethernet UDP↔TAP\n"))
+	consoleReaderDone := make(chan struct{})
 	go func() {
+		defer close(consoleReaderDone)
+		defer logFile.Close()
 		buf := make([]byte, 4096)
 		for {
-			count, e := stdout.Read(buf)
-			if count > 0 {
-				ins.console.append(buf[:count])
+			n, err := master.Read(buf)
+			if n > 0 {
+				ins.console.append(buf[:n])
+				_, _ = logFile.Write(buf[:n])
 			}
-			if e != nil {
-				if e != io.EOF {
-					ins.console.append([]byte(e.Error()))
-				}
+			if err != nil {
 				return
 			}
 		}
 	}()
 	go func() {
 		waitErr := cmd.Wait()
+		transport.close()
+		_ = master.Close()
+		<-consoleReaderDone // flush PTY output before reporting the exit error
 		e.mu.Lock()
 		if waitErr != nil {
-			ins.err = waitErr.Error()
+			ins.err = fmt.Sprintf("VPCS завершился: %v. Журнал: %s", waitErr, tailLog(filepath.Join(runtime, "vpcs.log")))
 		}
 		ins.status = "stopped"
 		for _, ln := range ins.links {
@@ -128,10 +153,7 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 		}
 		e.mu.Unlock()
 		ins.console.mu.Lock()
-		if ins.console.writer != nil {
-			_ = ins.console.writer.Close()
-			ins.console.writer = nil
-		}
+		ins.console.writer = nil
 		ins.console.mu.Unlock()
 		cleanup()
 		close(ins.done)

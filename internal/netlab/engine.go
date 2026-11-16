@@ -51,15 +51,16 @@ func (c *Console) write(text string) error {
 }
 
 type Instance struct {
-	cmd     *exec.Cmd
-	done    chan struct{}
-	console *Console
-	taps    []string
-	engine  string // qemu or vpcs
-	links   []Link
-	qmp     string
-	err     string
-	status  string
+	cmd           *exec.Cmd
+	done          chan struct{}
+	console       *Console
+	taps          []string
+	engine        string // qemu or vpcs
+	vpcsTransport *vpcsTransport
+	links         []Link
+	qmp           string
+	err           string
+	status        string
 }
 type Engine struct {
 	mu         sync.Mutex

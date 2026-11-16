@@ -36,8 +36,8 @@ func TestVPCSNodeValidation(t *testing.T) {
 	if err := validateNode(invalid); err == nil {
 		t.Fatal("Unknown engine accepted")
 	}
-	args := strings.Join(vpcsArgs("tap123"), " ")
-	if args != "-i 1 -e -d tap123" {
+	args := strings.Join(vpcsArgs(30101, 30102, 37), " ")
+	if args != "-i 1 -u -s 30101 -c 30102 -t 127.0.0.1 -m 37" {
 		t.Fatalf("Unexpected VPCS invocation: %s", args)
 	}
 	if err := instanceSetLink(&Instance{engine: "vpcs"}, 0, true); err != nil {

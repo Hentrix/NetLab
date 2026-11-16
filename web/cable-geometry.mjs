@@ -20,8 +20,8 @@ export function anchorFor(node,target){
 function sideAnchor(node,side,slot,total){
   const c=deviceCenter(node);
   const wide=side==='top'||side==='bottom';
-  const half=wide?FACE_HALF_X:FACE_HALF_Y;
-  const spacing=total>1?Math.min(15,(2*half)/(total-1)):0;
+  const half=wide?FACE_HALF_X:Math.max(FACE_HALF_Y,(total-1)*10);
+  const spacing=total>1?Math.min(20,(2*half)/(total-1)):0;
   const offset=(slot-(total-1)/2)*spacing;
   switch(side){
     case 'left':return {x:c.x-50,y:c.y+offset};
@@ -72,48 +72,60 @@ export function layoutParallelCables(lab){
 function badgeBox(x,y,width,height){return {left:x-width/2,right:x+width/2,top:y-height/2,bottom:y+height/2};}
 function intersectArea(a,b){return Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left))*Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top));}
 
-/**
- * Labels belong to their own cable, not to the free space next to it.
- * A badge's center is constrained to the exact A--B segment: it can move
- * forward/back along that wire to avoid other labels, never sideways.
- * Keep this pure: the SVG editor and PNG exporter must share this layout.
- */
+// Each side of a device uses ONE shared label offset.  The previous
+// per-label collision resolver sent ether2/ether4 farther along their lines
+// than ether1/ether3, even with four neatly parallel cables. This groups the
+// ports and moves the whole bank together when there is an obstacle.
 export function layoutPortBadges(lab,links,portName){
  const nodes=new Map((lab.nodes||[]).map(n=>[n.id,n]));
+ const groups=new Map(),results=new Map();
+ const boxes=(lab.nodes||[]).map(n=>({left:n.x-3,right:n.x+101,top:n.y-4,bottom:n.y+104}));
  const occupied=[];
- const nodeBoxes=(lab.nodes||[]).map(n=>({left:n.x-3,right:n.x+101,top:n.y-4,bottom:n.y+104}));
- const labels=new Map();
- const items=[];
  for(const link of lab.links||[]){
   const geo=links.get(link.id),a=nodes.get(link.a),b=nodes.get(link.b);
   if(!geo||!a||!b)continue;
-  items.push({id:link.id,end:'a',point:geo.A,other:geo.B,name:String(portName(a,link.aPort))});
-  items.push({id:link.id,end:'b',point:geo.B,other:geo.A,name:String(portName(b,link.bPort))});
- }
- // Stable order makes placement independent of API link ordering.
- items.sort((a,b)=>a.id.localeCompare(b.id)||a.end.localeCompare(b.end));
- for(const item of items){
-  const {point,other,name}=item,dx=other.x-point.x,dy=other.y-point.y;
-  const len=Math.hypot(dx,dy)||1,ux=dx/len,uy=dy/len;
-  const width=Math.max(35,name.length*6.35+13),height=18;
-  // Never move the centre past the opposite endpoint. Reserve some free cable
-  // between two endpoint labels when the link has enough length.
-  const maxAlong=Math.max(1,Math.min(len*.49,len-1));
-  const nominal=Math.min(30,maxAlong);
-  const candidates=[nominal,42,54,68,82,100,125,150,Math.min(len*.35,maxAlong),Math.min(len*.45,maxAlong)]
-    .map(v=>Math.max(1,Math.min(maxAlong,v))).filter((v,i,arr)=>arr.findIndex(x=>Math.abs(x-v)<.5)===i);
-  let best=null,score=Infinity;
-  for(const along of candidates){
-   // IMPORTANT: no normal vector component: badge stays on the cable.
-   const x=point.x+ux*along,y=point.y+uy*along;
-   const rect=badgeBox(x,y,width,height);
-   const overlap=occupied.reduce((sum,o)=>sum+intersectArea(rect,o)*35,0);
-   const nodeOverlap=nodeBoxes.reduce((sum,o)=>sum+intersectArea(rect,o)*20,0);
-   const cost=overlap+nodeOverlap+Math.abs(along-nominal)*.32;
-   if(cost<score){score=cost;best={x,y,width,height};}
+  for(const item of [
+   {id:link.id,end:'a',node:a,point:geo.A,other:geo.B,side:geo.sideA,name:String(portName(a,link.aPort))},
+   {id:link.id,end:'b',node:b,point:geo.B,other:geo.A,side:geo.sideB,name:String(portName(b,link.bPort))}
+  ]){
+    const key=`${item.node.id}:${item.side}`;
+    if(!groups.has(key))groups.set(key,[]);
+    item.width=Math.max(35,item.name.length*6.35+13);item.height=18;
+    groups.get(key).push(item);
   }
-  occupied.push(badgeBox(best.x,best.y,width,height));
-  const result=labels.get(item.id)||{};result[item.end]=best;labels.set(item.id,result);
  }
- return labels;
+ for(const key of [...groups.keys()].sort()){
+  const items=groups.get(key).sort((a,b)=>a.id.localeCompare(b.id)||a.end.localeCompare(b.end));
+  const maxWidth=Math.max(...items.map(i=>i.width));
+  const preferred=Math.max(30,maxWidth/2+9);
+  // Advance every badge on this face by the same distance; on short links
+  // the halfway limit is shared whenever possible.
+  const minReach=Math.min(...items.map(i=>Math.hypot(i.other.x-i.point.x,i.other.y-i.point.y)*.45));
+  const candidates=[0,12,24,38,54,75,100].map(d=>Math.min(preferred+d,minReach));
+  let best=null,bestScore=Infinity;
+  for(const distance of [...new Set(candidates)]){
+   const placements=[];
+   for(const item of items){
+    const dx=item.other.x-item.point.x,dy=item.other.y-item.point.y,len=Math.hypot(dx,dy)||1;
+    const x=item.point.x+dx/len*distance,y=item.point.y+dy/len*distance;
+    placements.push({...item,x,y,rect:badgeBox(x,y,item.width,item.height)});
+   }
+   let collision=0;
+   for(let i=0;i<placements.length;i++){
+    const item=placements[i];
+    collision+=occupied.reduce((a,b)=>a+intersectArea(item.rect,b)*18,0);
+    collision+=boxes.reduce((a,b)=>a+intersectArea(item.rect,b)*20,0);
+    for(let j=0;j<i;j++)collision+=intersectArea(item.rect,placements[j].rect)*35;
+   }
+   const score=collision+Math.abs(distance-preferred)*.3;
+   if(score<bestScore){bestScore=score;best=placements;}
+  }
+  for(const item of best){
+   occupied.push(item.rect);
+   const entry=results.get(item.id)||{};
+   entry[item.end]={x:item.x,y:item.y,width:item.width,height:item.height};
+   results.set(item.id,entry);
+  }
+ }
+ return results;
 }
