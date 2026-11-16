@@ -10,7 +10,8 @@ Type=simple
 EnvironmentFile=/etc/netlab/netlab.env
 WorkingDirectory=/opt/netlab
 ExecStart=/usr/local/bin/netlab -listen 127.0.0.1:8080 -data /var/lib/netlab -web /opt/netlab/web
-Restart=on-failure
+Restart=always
+# A transient clean exit must not leave the UI offline; explicit systemctl stop still stops it.
 RestartSec=3s
 # Root is required for TAP and OVS orchestration. QEMU processes run as netlab-vm.
 User=root

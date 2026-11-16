@@ -23,6 +23,7 @@ import (
 type Console struct {
 	mu      sync.Mutex
 	content []byte
+	start   int64 // absolute offset of first retained byte
 	conn    net.Conn
 	writer  io.WriteCloser // stdin for process-backed consoles (VPCS)
 }
@@ -32,8 +33,28 @@ func (c *Console) append(b []byte) {
 	defer c.mu.Unlock()
 	c.content = append(c.content, b...)
 	if len(c.content) > 128*1024 {
-		c.content = append([]byte(nil), c.content[len(c.content)-128*1024:]...)
+		drop := len(c.content) - 128*1024
+		c.start += int64(drop)
+		c.content = append([]byte(nil), c.content[drop:]...)
 	}
+}
+
+// readSince returns a bounded byte delta. A reset tells the subscriber that
+// its cursor predates the retained 128 KiB scrollback window.
+func (c *Console) readSince(offset int64) ([]byte, int64, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	reset := offset < c.start || offset > c.start+int64(len(c.content))
+	if reset {
+		offset = c.start
+	}
+	from := int(offset - c.start)
+	// Limit a single message and allow the client to request/stream more.
+	to := from + 16*1024
+	if to > len(c.content) {
+		to = len(c.content)
+	}
+	return append([]byte(nil), c.content[from:to]...), c.start + int64(to), reset
 }
 func (c *Console) read() string { c.mu.Lock(); defer c.mu.Unlock(); return string(c.content) }
 func (c *Console) write(text string) error {
@@ -81,6 +102,16 @@ func (e *Engine) Status(lab, node string) (string, string) {
 		return i.status, i.err
 	}
 	return "stopped", ""
+}
+func (e *Engine) ReadConsoleSince(lab, node string, offset int64) ([]byte, int64, bool, error) {
+	e.mu.Lock()
+	i := e.instances[key(lab, node)]
+	e.mu.Unlock()
+	if i == nil {
+		return nil, offset, false, errors.New("узел не запускался в этой сессии")
+	}
+	data, cursor, reset := i.console.readSince(offset)
+	return data, cursor, reset, nil
 }
 func (e *Engine) ReadConsole(lab, node string) (string, error) {
 	e.mu.Lock()

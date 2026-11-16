@@ -3,9 +3,15 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<meta name="color-scheme" content="light"/>
+<meta name="color-scheme" content="light dark"/>
+<script>
+/* Read the preference before styles render to avoid a bright flash. */
+try { document.documentElement.dataset.theme = localStorage.getItem('netlab-theme') === 'dark' ? 'dark' : 'light'; }
+catch { document.documentElement.dataset.theme = 'light'; }
+</script>
 <title>NetLab — Network Topology</title>
 <link rel="stylesheet" href="/style.css"/>
+<link rel="stylesheet" href="/theme.css"/>
 </head>
 <body>
 <div id="app">
@@ -21,12 +27,12 @@
       <div class="side-heading"><span>МОИ ЛАБОРАТОРИИ</span><button id="quickNew" title="Создать лабораторию"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 4v16M4 12h16"/></svg></button></div>
       <div id="labList" class="lab-list"></div>
     </div>
-    <div class="sidebar-footer"><span class="online-dot"></span> NetLab Core <span class="muted">v0.7.2</span></div>
+    <div class="sidebar-footer"><span class="online-dot"></span> NetLab Core <span class="muted">v0.7.3</span></div>
   </aside>
   <main class="main">
     <header class="topbar">
       <div class="breadcrumbs"><span>Workspace</span><span class="slash">/</span><strong id="pageTitle">Лаборатории</strong></div>
-      <div class="header-right"><span id="serverHealth" class="pill muted-pill">● Проверка сервера</span><button id="signOut" class="ghost small">Сменить токен</button></div>
+      <div class="header-right"><button id="themeToggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="Включить тёмную тему" title="Тёмная тема"><svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"/></svg><svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><span class="theme-toggle-label">Тёмная</span></button><span id="serverHealth" class="pill muted-pill">● Проверка сервера</span><button id="signOut" class="ghost small">Сменить токен</button></div>
     </header>
     <div id="viewLabs" class="view">
       <div class="workspace-header"><div><h1 id="labTitle">Лаборатории</h1><p id="labSubtitle">Создайте лабораторию и добавьте виртуальные устройства</p></div><div class="actions"><button id="newLab" class="secondary">＋ Новая лаборатория</button><button id="startAll" class="primary lab-action" disabled><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg></span> Запустить всё</button><button id="stopAll" class="secondary lab-action" disabled><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></span> Остановить</button><button id="snapshotLab" class="secondary lab-action" disabled title="Сохранить топологию целиком как PNG"><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="2"/><circle cx="12" cy="13" r="4"/><path d="M8 6V4h8v2"/></svg></span> Снимок</button><span class="lab-action-separator" aria-hidden="true"></span><button id="labMore" class="secondary lab-menu-button lab-action" title="Действия с лабораторией" aria-label="Действия с лабораторией"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button></div></div>
@@ -98,7 +104,22 @@
   </main>
 </div>
 <div id="modalBackdrop" class="modal-backdrop hidden"><div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><h2 id="modalTitle"></h2><button id="closeModal" class="icon-btn" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 5 19 19M19 5 5 19"/></svg></button></div><div id="modalContent"></div></div></div>
-<div id="consoleBackdrop" class="console-backdrop hidden"><section class="console-window"><div class="console-header"><div><span class="terminal-symbol">›_</span> <strong id="consoleTitle">Serial Console</strong><span class="console-label">SERIAL</span></div><button id="closeConsole" class="icon-btn" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 5 19 19M19 5 5 19"/></svg></button></div><pre id="consoleOutput" tabindex="0">Подключение к консоли...</pre><form id="consoleForm"><span>›</span><input id="consoleInput" autocomplete="off" spellcheck="false" placeholder="Введите команду и нажмите Enter"/><button type="submit" class="primary small">Отправить ↵</button></form></section></div>
+<div id="consoleWorkspace" class="console-shell hidden">
+ <section id="consoleWindow" class="console-window" aria-label="Терминальные консоли">
+  <header id="consoleDrag" class="console-header" aria-label="Перетащить окно консоли">
+   <div class="console-header-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m4 7 5 5-5 5M12 17h8"/></svg><strong id="consoleTitle">Консоль</strong><span class="console-header-hint">NETLAB TERMINAL</span></div>
+   <div class="console-window-controls">
+    <button id="consoleMinimize" title="Свернуть" aria-label="Свернуть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12h16"/></svg></button>
+    <button id="consoleMaximize" title="Развернуть" aria-label="Развернуть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
+    <button id="consoleCloseAll" title="Закрыть окно консоли" aria-label="Закрыть окно консоли"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+   </div>
+  </header>
+  <div id="consoleTabs" class="console-tabs" role="tablist" aria-label="Консоли устройств"></div>
+  <div id="consoleScreen" class="console-screen" role="region" aria-label="Вывод терминала"><div id="consoleOutput" class="terminal-output" aria-live="off"></div><textarea id="consoleKeyInput" class="console-key-input" aria-label="Клавиатурный ввод в консоль" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea></div>
+  <footer class="console-statusbar"><span id="consoleStatus" class="console-connection connecting">Подключение…</span><span class="console-shortcuts">Ctrl+C · Ctrl+Tab · Enter · ↑ ↓</span><button id="consoleReconnect" title="Переподключить консоль">Переподключить</button></footer>
+ </section>
+ <button id="consoleRestore" class="console-restore" title="Развернуть консоли" aria-label="Развернуть консоли"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m4 7 5 5-5 5M12 17h8"/></svg><span>Консоли</span><span id="consoleTabCount" class="console-tab-count">0</span></button>
+</div>
 <div id="loginBackdrop" class="login-backdrop hidden"><div class="login-card"><div class="login-logo">N<span>●</span></div><h1>Добро пожаловать в NetLab</h1><p>Введите административный токен, созданный установщиком. Без него управление виртуальными машинами заблокировано.</p><form id="loginForm"><label for="tokenInput">Административный токен</label><input type="password" id="tokenInput" autocomplete="off" placeholder="NETLAB_ADMIN_TOKEN" required minlength="24"/><button class="primary" type="submit">Войти в NetLab</button></form><small>Первый запуск: токен задаётся через переменную NETLAB_ADMIN_TOKEN.</small></div></div>
 <div id="canvasContext" class="context-menu hidden" role="menu"></div>
 <div id="iconPickerBackdrop" class="modal-backdrop icon-picker-backdrop hidden"><section class="icon-picker-window" role="dialog" aria-modal="true" aria-label="Библиотека иконок"><header class="icon-picker-head"><div><strong>Выбор значка устройства</strong><p id="iconPickerCount" class="muted">Загрузка…</p></div><button id="closeIconPicker" class="icon-btn" title="Закрыть">✕</button></header><div class="icon-picker-tools"><input id="iconSearch" type="search" placeholder="Поиск по названию (Router, Switch, Server…)"/><div id="iconCategories" class="icon-categories"></div></div><div id="iconGrid" class="icon-grid"></div></section></div>

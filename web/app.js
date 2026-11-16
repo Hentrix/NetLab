@@ -6,6 +6,8 @@ import {annotationLimits,resizeAnnotationRect,MIN_FITTED_FONT_PX} from './annota
 import {downloadTopologyPNG} from './topology-snapshot.mjs';
 import {selectionForContextMenu,shouldClearCanvasSelection} from './context-selection.mjs';
 import {translateSelection,worldCoordinates} from './canvas-coordinates.mjs';
+import {ConsoleWorkspace} from './console-manager.mjs';
+import {initThemeToggle} from './theme.mjs';
 const $ = (q, root = document) => root.querySelector(q);
 const el = (tag, cls = '', text = '') => { const item = document.createElement(tag); if (cls) item.className = cls; item.textContent = text; return item; };
 const state = {token: sessionStorage.getItem('netlabToken') || '', labs: [], images: [], templates: [], selectedLab: null, selectedNode: null, view: 'labs', mode: 'select', linkFrom: null, console: null, poller: null, zoom: 1, panX: 80, panY: 50, spaceHeld: false, contextNode: null, iconCatalogue: [], iconLoaded: false, placement: null, linkPort: null, dragging: false, linkDrag: null, selectedNodes: new Set(), inspectorTab: 'overview', annotationDrag: false, collapsedGroups: new Set(), explorerQuery: '', telemetry: null};
@@ -14,6 +16,7 @@ const escapeHTML = value => text(value).replace(/[&<>"']/g, c => ({'&':'&amp;','
 const bytes = size => size >= 1024*1024*1024 ? `${(size/(1024**3)).toFixed(2)} GiB` : `${(size/(1024**2)).toFixed(2)} MiB`;
 let toastHandle;
 function toast(message, error = false) { const box = $('#toast'); box.textContent = message; box.className = `toast${error ? ' error':''}`; clearTimeout(toastHandle); toastHandle = setTimeout(() => box.classList.add('hidden'), 4700); }
+const consoles = new ConsoleWorkspace(document.querySelector('#consoleWorkspace'), {getToken:()=>state.token,notify:toast});
 async function api(path, options = {}) {
   const headers = {Authorization: `Bearer ${state.token}`, ...(options.body && !(options.body instanceof FormData) ? {'Content-Type':'application/json'} : {})};
   const response = await fetch('/api/' + path, {...options, headers});
@@ -229,7 +232,7 @@ function annotationDefaults(note){return {
 };}
 function styleAnnotation(item,note){
   const style=annotationDefaults(note);
-  item.style.color=style.color;item.style.backgroundColor=style.background;
+  item.style.color=note.color || (note.kind==='text' ? 'var(--canvas-text)' : style.color);item.style.backgroundColor=style.background;
   item.style.border=style.borderWidth?`${style.borderWidth}px solid ${style.borderColor}`:'0 solid transparent';
   item.style.fontSize=`${style.fontSize}px`;item.style.fontWeight=style.bold?'700':'400';
   item.style.fontStyle=style.italic?'italic':'normal';item.style.textDecoration=style.underline?'underline':'none';item.style.textAlign=style.align;
@@ -654,9 +657,8 @@ function renderImages(){const table=$('#imagesTable');table.replaceChildren();co
   for(const img of state.images){const row=el('div','table-row');row.append(el('strong','',img.name));const badge=el('div');badge.append(el('span','filetype',img.format.toUpperCase()));row.append(badge,el('div','muted',bytes(img.size)));const actions=el('div');const remove=el('button','','Удалить');remove.onclick=async()=>{if(!confirm(`Удалить образ ${img.name}?`))return;const ok=await request(`images/${img.id}`,{method:'DELETE'});if(ok)refresh();};actions.append(remove);row.append(actions);table.append(row);}if(!state.images.length)table.append(el('div','modal-body muted','Образов пока нет. Загрузите автономный QCOW2 или RAW диск.'));
 }
 async function refreshSystem(){const sys=await request('system');if(!sys)return;const area=$('#systemCards');area.replaceChildren();for(const [name,description,key] of [['QEMU','Эмулятор виртуальных машин','qemu'],['QEMU: запуск','Запуск от системного пользователя netlab-vm','qemuSpawn'],['QEMU-IMG','Импорт и overlay-диски','qemuImg'],['Open vSwitch','L2 коммутация','ovs'],['KVM','Аппаратное ускорение','kvm'],['VM user','netlab-vm','vmUser'],['VPCS','Лёгкие виртуальные компьютеры','vpcs']]){const card=el('div','status-card');card.append(el('strong','',name),el('span',sys[key]?'● Готово':'○ Недоступно'));$('span',card).className=sys[key]?'ok':'not-ok';card.append(el('p','muted',description));if(key==='qemuSpawn'&&!sys[key]&&sys.qemuSpawnError)card.append(el('p','danger-text',sys.qemuSpawnError));area.append(card);}$('#serverHealth').textContent=sys.qemuSpawn&&sys.ovs&&sys.qemuImg&&sys.vmUser?'● Engine ready':'● Требуется проверка';$('#serverHealth').className=`pill ${sys.qemuSpawn&&sys.ovs&&sys.qemuImg&&sys.vmUser?'good-pill':'bad-pill'}`;}
-function openConsole(node){const lab=currentLab();if(!lab)return;closeConsole();state.console={lab:lab.id,node:node.id};$('#consoleTitle').textContent=node.name;$('#consoleOutput').textContent='Подключение к Serial...';$('#consoleBackdrop').classList.remove('hidden');$('#consoleInput').focus();pollConsole();state.poller=setInterval(pollConsole,900);}
-async function pollConsole(){const c=state.console;if(!c)return;try{const response=await api(`labs/${c.lab}/nodes/${c.node}/console`);if(state.console!==c)return;const target=$('#consoleOutput');const nearBottom=target.scrollHeight-target.scrollTop-target.clientHeight<100;if(target.textContent!==response.output)target.textContent=response.output||'[Serial console: ожидается вывод гостевой ОС]';if(nearBottom)target.scrollTop=target.scrollHeight;}catch(err){if(state.console===c)$('#consoleOutput').textContent=`Ошибка: ${err.message}`;}}
-function closeConsole(){state.console=null;if(state.poller){clearInterval(state.poller);state.poller=null;}$('#consoleBackdrop').classList.add('hidden');}
+function openConsole(node){const lab=currentLab();if(!lab)return;consoles.open({lab:lab.id,node:node.id,name:node.name,engine:node.engine||'qemu'});}
+function closeConsole(){consoles.closeAll();}
 async function openLog(node){const lab=currentLab();if(!lab)return;const response=await request(`labs/${lab.id}/nodes/${node.id}/log`);if(!response)return;const wrap=el('div','modal-body');const pre=el('pre','',response.output||'Лог пока пуст');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;font-size:11px;color:#abccff';wrap.append(pre);showModal(`Журнал · ${node.name}`,wrap,()=>true);}
 function showLogin(){$('#loginBackdrop').classList.remove('hidden');}
 function hideLogin(){$('#loginBackdrop').classList.add('hidden');}
@@ -928,14 +930,13 @@ async function deleteCurrentLab(){
  const done=await request(`labs/${lab.id}`,{method:'DELETE'});if(done){state.selectedLab=null;state.selectedNode=null;state.selectedNodes.clear();refresh();}
 }
 function bind(){
+  initThemeToggle($('#themeToggle'));
   document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
   for(const id of ['newLab','quickNew','emptyNew'])$('#'+id).onclick=showNewLab;
   $('#addNodeBtn').onclick=()=>showNodeModal();$('#closeModal').onclick=hideModal;
   $('#modalBackdrop').onclick=e=>{if(e.target===$('#modalBackdrop'))hideModal();};
-  $('#closeConsole').onclick=closeConsole;$('#consoleBackdrop').onclick=e=>{if(e.target===$('#consoleBackdrop'))closeConsole();};
-  $('#consoleForm').onsubmit=async e=>{e.preventDefault();const val=$('#consoleInput').value;const c=state.console;if(!c)return;$('#consoleInput').value='';const result=await request(`labs/${c.lab}/nodes/${c.node}/console`,{method:'POST',body:json({text:val+'\r'})});if(result)pollConsole();};
   $('#loginForm').onsubmit=async e=>{e.preventDefault();state.token=$('#tokenInput').value.trim();try{await api('labs');sessionStorage.setItem('netlabToken',state.token);hideLogin();await refresh();await refreshSystem();await refreshTelemetry();}catch(err){toast(err.message,true);}};
-  $('#signOut').onclick=()=>{state.token='';sessionStorage.removeItem('netlabToken');showLogin();};
+  $('#signOut').onclick=()=>{consoles.closeAll();state.token='';sessionStorage.removeItem('netlabToken');showLogin();};
   for(const [id,mode] of [['selectTool','select'],['linkTool','link'],['panTool','pan'],['marqueeTool','marquee'],['textTool','text'],['noteTool','note']])$('#'+id).onclick=()=>setMode(mode);
   $('#overviewTab').onclick=()=>{state.inspectorTab='overview';renderDetails(currentLab());};$('#interfacesTab').onclick=()=>{state.inspectorTab='interfaces';renderDetails(currentLab());};
   $('#explorerAdd').onclick=()=>showNodeModal();$('#explorerAddBottom').onclick=()=>showNodeModal();
@@ -958,7 +959,7 @@ function bind(){
 
   $('#imageFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;toast('Загрузка образа: не закрывайте страницу до завершения');const data=new FormData();data.append('file',file);const result=await request('images',{method:'POST',body:data});e.target.value='';if(result){toast(`Образ ${result.name} загружен`);refresh();}};
   document.addEventListener('pointerdown',e=>{if(!e.target.closest('#canvasContext'))hideContext();});
-  document.addEventListener('keydown',e=>{if(e.code==='Space'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&!e.repeat){state.spaceHeld=true;$('#canvasViewport').classList.add('space-pan');e.preventDefault();}
+  document.addEventListener('keydown',e=>{if(e.target.closest('#consoleWorkspace'))return;if(e.code==='Space'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&!e.repeat){state.spaceHeld=true;$('#canvasViewport').classList.add('space-pan');e.preventDefault();}
    if(e.key==='Escape'){hideContext();hideIconPicker();hideModal();closeConsole();state.linkFrom=null;setMode('select');}
    if(!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.repeat&&$('#modalBackdrop').classList.contains('hidden')){
       const tool={KeyV:'select',KeyH:'pan',KeyC:'link',KeyM:'marquee',KeyT:'text',KeyN:'note'}[e.code];if(tool&&state.view==='labs')setMode(tool);

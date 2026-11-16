@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -110,6 +111,7 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 		cleanup()
 		return fmt.Errorf("запуск VPCS: %w", err)
 	}
+	log.Printf("VPCS started: lab=%s node=%s pid=%d source=%d relay=%d", l.ID, n.ID, cmd.Process.Pid, sourcePort, transport.udp.LocalAddr().(*net.UDPAddr).Port)
 	_ = slave.Close()
 	transport.start(sourcePort)
 	ins := &Instance{cmd: cmd, done: make(chan struct{}), engine: "vpcs", taps: []string{tap}, status: "running", console: &Console{writer: master}, vpcsTransport: transport}
@@ -133,6 +135,7 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 	}()
 	go func() {
 		waitErr := cmd.Wait()
+		log.Printf("VPCS exited: lab=%s node=%s pid=%d result=%v", l.ID, n.ID, cmd.Process.Pid, waitErr)
 		transport.close()
 		_ = master.Close()
 		<-consoleReaderDone // flush PTY output before reporting the exit error

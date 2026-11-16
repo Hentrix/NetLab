@@ -2,6 +2,7 @@ package netlab
 
 import (
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -53,7 +55,7 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		respond(w, 200, map[string]any{"status": "ok", "version": "0.7.2"})
+		respond(w, 200, map[string]any{"status": "ok", "version": "0.7.3"})
 	})
 	mux.Handle("/api/", s.auth(http.HandlerFunc(s.api)))
 	mux.Handle("/", http.FileServer(http.Dir(s.web)))
@@ -119,6 +121,10 @@ func (s *Server) hasRunning(l Lab) bool {
 }
 func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/"), "/"), "/")
+	if len(parts) == 6 && parts[0] == "labs" && parts[2] == "nodes" && parts[4] == "console" && parts[5] == "stream" {
+		s.consoleStream(w, r, parts[1], parts[3])
+		return
+	}
 	switch parts[0] {
 	case "metrics":
 		if r.Method != http.MethodGet {
@@ -162,6 +168,83 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	default:
 		fail(w, 404, "неизвестный API")
 		return
+	}
+}
+
+// consoleStream emits authenticated, bounded incremental console data. It is
+// routed before labsAPI, whose store lock cannot be held for a long stream.
+func (s *Server) consoleStream(w http.ResponseWriter, r *http.Request, labID, nodeID string) {
+	if r.Method != http.MethodGet {
+		fail(w, 405, "method not allowed")
+		return
+	}
+	if !validID(labID) || !validID(nodeID) {
+		fail(w, 404, "узел не найден")
+		return
+	}
+	s.store.mu.Lock()
+	l := s.store.findLab(labID)
+	exists := l != nil && findNode(l, nodeID) != nil
+	s.store.mu.Unlock()
+	if !exists {
+		fail(w, 404, "узел не найден")
+		return
+	}
+	cursor := int64(0)
+	if raw := r.URL.Query().Get("cursor"); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 0 {
+			fail(w, 400, "неверная позиция консоли")
+			return
+		}
+		cursor = parsed
+	}
+	// Validate instance before sending headers (otherwise API errors become 200 SSE).
+	_, _, _, err := s.engine.ReadConsoleSince(labID, nodeID, cursor)
+	if err != nil {
+		fail(w, 409, err.Error())
+		return
+	}
+	flush, ok := w.(http.Flusher)
+	if !ok {
+		fail(w, 500, "потоковый вывод не поддерживается")
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "text/event-stream; charset=utf-8")
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Accel-Buffering", "no")
+	flush.Flush()
+	ticker := time.NewTicker(120 * time.Millisecond)
+	keepalive := time.NewTicker(12 * time.Second)
+	defer ticker.Stop()
+	defer keepalive.Stop()
+	for {
+		data, next, reset, err := s.engine.ReadConsoleSince(labID, nodeID, cursor)
+		if err != nil {
+			_, _ = fmt.Fprintf(w, "event: closed\ndata: {}\n\n")
+			flush.Flush()
+			return
+		}
+		if len(data) > 0 || reset {
+			payload, _ := json.Marshal(map[string]any{"chunk": base64.StdEncoding.EncodeToString(data), "cursor": next, "reset": reset})
+			if _, err = fmt.Fprintf(w, "event: output\ndata: %s\n\n", payload); err != nil {
+				return
+			}
+			flush.Flush()
+			cursor = next
+			continue // drain more than 16 KiB without delaying full scrollback
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+		case <-keepalive.C:
+			if _, err = io.WriteString(w, ": keepalive\n\n"); err != nil {
+				return
+			}
+			flush.Flush()
+		}
 	}
 }
 func (s *Server) imagesAPI(w http.ResponseWriter, r *http.Request, p []string) {
