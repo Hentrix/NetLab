@@ -1,5 +1,6 @@
 import {portInfo,portCapacity,defaultSpeed,SPEEDS,speedText} from './network-ports.mjs';
 import {anchorFor,layoutParallelCables,layoutPortBadges} from './cable-geometry.mjs';
+import {selectedCablePort} from './cable-editor.mjs';
 import {deviceStatusLabel,deviceStatusStyle} from './device-status.mjs';
 import {annotationLimits,resizeAnnotationRect,MIN_FITTED_FONT_PX} from './annotation-layout.mjs';
 import {downloadTopologyPNG} from './topology-snapshot.mjs';
@@ -215,7 +216,7 @@ function renderWires(lab){
    drawPortBadge(cable,labelPort(b,link.bPort),labels?.b);
    svgEl('title',{},cable).textContent=updateCableTip(link,a,b);
    const hit=svgEl('path',{d:`M ${A.x} ${A.y} L ${B.x} ${B.y}`,class:'cable-hit'},cable);
-   hit.addEventListener('contextmenu',e=>{if(state.mode==='pan'||state.spaceHeld){e.preventDefault();return;}e.preventDefault();e.stopPropagation();showContext(e.clientX,e.clientY,[{label:'Изменить интерфейсы / устройство',icon:'⚙',action:()=>showCableInfo(link,a,b)},{label:'Оформление кабеля',icon:'◉',action:()=>showCableStyle(link)},{label:'Состояние: '+linkLabel(link.status),icon:'●',disabled:true},{separator:true},{label:`Отключить ${labelPort(a,link.aPort)} ↔ ${labelPort(b,link.bPort)}`,icon:'✕',destructive:true,action:()=>removeLink(link)}]);});
+   hit.addEventListener('contextmenu',e=>{if(state.mode==='pan'||state.spaceHeld){e.preventDefault();return;}e.preventDefault();e.stopPropagation();showContext(e.clientX,e.clientY,[{label:'Изменить соединение и оформление',icon:'settings',action:()=>showCableInfo(link,a,b)},{label:'Состояние: '+linkLabel(link.status),icon:'info',disabled:true},{separator:true},{label:`Отключить ${labelPort(a,link.aPort)} ↔ ${labelPort(b,link.bPort)}`,icon:'trash',destructive:true,action:()=>removeLink(link)}]);});
    hit.addEventListener('dblclick',e=>{e.stopPropagation();showCableInfo(link,a,b);});
  }
 }
@@ -707,11 +708,37 @@ function showSelectionContext(x,y){
   {icon:'✕',label:`Удалить все (${nodes.length})`,destructive:true,disabled:!nodes.length||running>0,action:deleteSelectedNodes}
  ]);
 }
+// Small, consistent stroke icons. No icon font or remote CDN is required.
+const menuIconPaths={
+ terminal:'<path d="m4 7 5 5-5 5M12 17h8"/>',
+ play:'<path d="m8 5 11 7-11 7z"/>',
+ stop:'<rect x="5" y="5" width="14" height="14" rx="2"/>',
+ link:'<path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7l-2 2M14 11a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7l2-2"/>',
+ pencil:'<path d="m16 4 4 4-12 12H4v-4zM13 7l4 4"/>',
+ ports:'<path d="M4 7h16m-5-4 5 4-5 4M20 17H4m5-4-5 4 5 4"/>',
+ image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="2"/><path d="m21 15-5-5L5 21"/>',
+ settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.5 1.5m11.2 11.2 1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/>',
+ log:'<path d="M8 4h12M8 10h12M8 16h12M3 4h1M3 10h1M3 16h1"/>',
+ trash:'<path d="M4 7h16M10 4h4m-8 3 1 14h10l1-14M10 11v6m4-6v6"/>',
+ plus:'<path d="M12 4v16M4 12h16"/>',
+ text:'<path d="M4 6h16M12 6v14M8 20h8"/>',
+ note:'<path d="M4 4h16v11l-5 5H4zM15 20v-5h5"/>',
+ fit:'<path d="M8 3H3v5m18 0V3h-5M3 16v5h5m8 0h5v-5"/>',
+ align:'<path d="M4 5h16M8 10h8M4 15h16M8 20h8"/>',
+ info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/>',
+ palette:'<circle cx="12" cy="12" r="9"/><circle cx="7" cy="10" r="1"/><circle cx="12" cy="6" r="1"/><circle cx="17" cy="10" r="1"/><path d="M14 21c-2-2-2-5 1-6"/>',
+ route:'<circle cx="5" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><path d="M7 5h8a4 4 0 0 1 4 4v8"/>'
+};
+const menuIconAliases={'›_':'terminal','▶':'play','■':'stop','↝':'link','✎':'pencil','⇄':'ports','▧':'image','⚙':'settings','☷':'log','✕':'trash','＋':'plus','T':'text','▢':'note','◎':'fit','●':'info','◉':'palette','≋':'align'};
+function menuSVG(name){
+ const path=menuIconPaths[menuIconAliases[name]||name]||menuIconPaths.info;
+ return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">${path}</svg>`;
+}
 function showContext(x,y,items){
  const menu=$('#canvasContext');menu.replaceChildren();
  for(const item of items){if(item.separator){menu.append(el('div','context-divider'));continue;}
   const btn=el('button','context-item'+(item.destructive?' destructive':'')+(item.disabled?' disabled':''));btn.disabled=!!item.disabled;
-  btn.append(el('span','context-symbol',item.icon||' '),el('span','',item.label));
+  const symbol=el('span','context-symbol');symbol.innerHTML=menuSVG(item.icon);btn.append(symbol,el('span','',item.label));
   btn.onclick=()=>{hideContext();item.action?.();};menu.append(btn);
  }
  menu.classList.remove('hidden');const maxX=window.innerWidth-menu.offsetWidth-8,maxY=window.innerHeight-menu.offsetHeight-8;
@@ -764,33 +791,32 @@ function showPortStyle(node){
 function showRename(node){const lab=currentLab(),wrap=el('div');wrap.innerHTML=`<form><div class="modal-body"><div class="field"><label>Название устройства</label><input name="name" maxlength="80" required value="${escapeHTML(node.name)}"/></div></div><div class="modal-footer"><button type="button" class="secondary cancel">Отмена</button><button type="submit" class="primary">Сохранить</button></div></form>`;
  $('.cancel',wrap).onclick=hideModal;showModal('Переименовать устройство',wrap,async data=>{const result=await request(`labs/${lab.id}/nodes/${node.id}`,{method:'PATCH',body:json({name:data.get('name')})});if(result){await refresh();return true;}return false;});}
 async function deleteNode(node){const lab=currentLab();if(!confirm(`Удалить «${node.name}» вместе с соединениями?`))return;const ok=await request(`labs/${lab.id}/nodes/${node.id}`,{method:'DELETE'});if(ok){state.selectedNode=null;refresh();}}
-function showCableStyle(link){
- const lab=currentLab(),wrap=el('div');
- const color=/^#[0-9a-fA-F]{6}$/.test(link.color||'')?link.color:'#4e88bf';
- wrap.innerHTML=`<form><div class="modal-body">
- <div class="field"><label>Цвет линии</label><input type="color" name="color" value="${color}"/></div>
- <div class="form-grid"><div class="field"><label>Тип линии</label><select name="lineStyle"><option value="solid">Сплошная</option><option value="dashed">Пунктир</option><option value="dotted">Точки</option></select></div>
- <div class="field"><label>Толщина</label><select name="lineWidth">${[1,2,3,4].map(v=>`<option value="${v}">${v} px</option>`).join('')}</select></div></div>
- <small class="muted">Оформление влияет только на топологию и PNG-снимок, не на сетевое соединение или состояние интерфейсов.</small>
- </div><div class="modal-footer"><button type="button" class="secondary cancel">Отмена</button><button type="submit" class="primary">Сохранить</button></div></form>`;
- $('select[name=lineStyle]',wrap).value=link.lineStyle||'solid';$('select[name=lineWidth]',wrap).value=String(link.lineWidth||2);
- $('.cancel',wrap).onclick=hideModal;
- showModal('Оформление кабеля',wrap,async data=>{
-  const result=await request(`labs/${lab.id}/links/${link.id}`,{method:'PATCH',body:json({color:String(data.get('color')),lineStyle:String(data.get('lineStyle')),lineWidth:Number(data.get('lineWidth'))})});
-  if(result){await refresh();return true;}return false;
- });
-}
 async function removeLink(link){const lab=currentLab();if(!confirm('Отсоединить кабель? Если узлы работают, сеть между ними будет немедленно разорвана.'))return;const ok=await request(`labs/${lab.id}/links/${link.id}`,{method:'DELETE'});if(ok){refresh();toast('Кабель отключён');}}
 function showCableInfo(link,a,b){
  const lab=currentLab(),wrap=el('div');
- wrap.innerHTML=`<form><div class="modal-body"><p class="cable-description">${escapeHTML(updateCableTip(link,a,b))}</p><div class="form-grid"><div class="field"><label>Устройство A</label><select name="a"></select></div><div class="field"><label>Устройство B</label><select name="b"></select></div></div><div class="cable-ports"><div class="field"><label>Интерфейс A</label><select name="aPort"></select></div><span class="cable-symbol">⟷</span><div class="field"><label>Интерфейс B</label><select name="bPort"></select></div></div><p class="muted">Кабель переподключается без остановки QEMU. Порты на работающих VM уже созданы.</p></div><div class="modal-footer"><button class="secondary cancel" type="button">Отмена</button><button class="primary" type="submit">Применить</button></div></form>`;
- for(const side of ['a','b']){const select=$(`select[name=${side}]`,wrap);for(const node of lab.nodes){const opt=el('option','',node.name);opt.value=node.id;select.append(opt)}select.value=link[side];}
- function updatePorts(){for(const side of ['a','b']){const node=lab.nodes.find(n=>n.id===$(`select[name=${side}]`,wrap).value),selector=$(`select[name=${side}Port]`,wrap),prev=Number(selector.value);selector.replaceChildren();if(!node)continue;const ports=availablePorts(lab,node,link.id);for(const p of ports){const opt=el('option','',labelPort(node,p));opt.value=p;selector.append(opt);}const original=link[side]===node.id?link[side+'Port']:-1;selector.value=ports.includes(prev)?String(prev):String(ports.includes(original)?original:ports[0]);}}
+ const color=/^#[0-9a-fA-F]{6}$/.test(link.color||'')?link.color:'#568bb8';
+ wrap.innerHTML=`<form><div class="modal-body cable-edit">
+ <p class="cable-description">${escapeHTML(updateCableTip(link,a,b))}</p>
+ <div class="cable-section-title">Подключение</div>
+ <div class="form-grid"><div class="field"><label>Устройство A</label><select name="a"></select></div><div class="field"><label>Устройство B</label><select name="b"></select></div></div>
+ <div class="cable-ports"><div class="field"><label>Интерфейс A</label><select name="aPort"></select></div><span class="cable-symbol">⟷</span><div class="field"><label>Интерфейс B</label><select name="bPort"></select></div></div>
+ <div class="cable-section-title">Внешний вид линии</div>
+ <div class="cable-style-options"><label class="field"><span>Цвет</span><input type="color" name="color" value="${color}" aria-label="Цвет кабеля"/></label><label class="field"><span>Толщина</span><select name="lineWidth">${[1,2,3,4].map(v=>`<option value="${v}">${v} px</option>`).join('')}</select></label><label class="field"><span>Стиль</span><select name="lineStyle"><option value="solid">Сплошная</option><option value="dashed">Пунктир</option><option value="dotted">Точки</option></select></label></div>
+ <div class="cable-style-preview" aria-label="Предпросмотр кабеля"><svg viewBox="0 0 360 44" preserveAspectRatio="none" aria-hidden="true"><circle cx="15" cy="22" r="4" fill="white" stroke="#94aac0"/><path id="cableEditPreviewLine" d="M 19 22 L 341 22" fill="none" stroke="#568bb8" stroke-width="2" stroke-linecap="round"/><circle cx="345" cy="22" r="4" fill="white" stroke="#94aac0"/></svg></div>
+ <small class="muted">Оформление не влияет на передачу пакетов. Смена интерфейсов переподключает кабель на горячую.</small>
+ </div><div class="modal-footer"><button class="secondary cancel" type="button">Отмена</button><button class="primary" type="submit">Применить</button></div></form>`;
+ for(const side of ['a','b']){const select=$(`select[name=${side}]`,wrap);for(const node of lab.nodes){const opt=el('option','',node.name);opt.value=node.id;select.append(opt);}select.value=link[side];}
+ function updatePorts(){for(const side of ['a','b']){const node=lab.nodes.find(n=>n.id===$(`select[name=${side}]`,wrap).value),selector=$(`select[name=${side}Port]`,wrap),previousValue=selector.value;selector.replaceChildren();if(!node)continue;const ports=availablePorts(lab,node,link.id);for(const p of ports){const opt=el('option','',labelPort(node,p));opt.value=p;selector.append(opt);}const original=link[side]===node.id?link[side+'Port']:-1;selector.value=selectedCablePort(ports,previousValue,original);}}
  for(const side of ['a','b'])$(`select[name=${side}]`,wrap).onchange=updatePorts;
  updatePorts();$('.cancel',wrap).onclick=hideModal;
- showModal('Переподключить Ethernet-кабель',wrap,async data=>{
-  const result=await request(`labs/${lab.id}/links/${link.id}`,{method:'PATCH',body:json({a:data.get('a'),b:data.get('b'),aPort:Number(data.get('aPort')),bPort:Number(data.get('bPort'))})});
-  if(result){await refresh();toast('Кабель переподключён: '+linkLabel(result.status));return true;}return false;
+ $('select[name=lineStyle]',wrap).value=link.lineStyle||'solid';$('select[name=lineWidth]',wrap).value=String(link.lineWidth||2);
+ function preview(){const path=$('#cableEditPreviewLine',wrap);path.setAttribute('stroke',$('input[name=color]',wrap).value);path.setAttribute('stroke-width',$('select[name=lineWidth]',wrap).value);const style=$('select[name=lineStyle]',wrap).value;path.setAttribute('stroke-dasharray',style==='dashed'?'9 6':style==='dotted'?'2 6':'none');}
+ for(const control of wrap.querySelectorAll('input[name=color],select[name=lineStyle],select[name=lineWidth]'))control.addEventListener('input',preview);
+ preview();
+ showModal('Настройки Ethernet-кабеля',wrap,async data=>{
+  const originalEndpoints=data.get('a')===link.a&&data.get('b')===link.b&&Number(data.get('aPort'))===link.aPort&&Number(data.get('bPort'))===link.bPort;
+  const result=await request(`labs/${lab.id}/links/${link.id}`,{method:'PATCH',body:json({a:data.get('a'),b:data.get('b'),aPort:Number(data.get('aPort')),bPort:Number(data.get('bPort')),color:String(data.get('color')),lineWidth:Number(data.get('lineWidth')),lineStyle:String(data.get('lineStyle'))})});
+  if(result){await refresh();toast(originalEndpoints?'Оформление кабеля сохранено':'Кабель переподключён: '+linkLabel(result.status));return true;}return false;
  });
 }
 function showNodeSettings(node){const lab=currentLab(),wrap=el('div');wrap.innerHTML=`<form><div class="modal-body"><div class="field"><label>Название</label><input name="name" required maxlength="80" value="${escapeHTML(node.name)}"/></div><div class="form-grid"><div class="field"><label>RAM (MiB)</label><input name="ram" type="number" min="128" max="131072" value="${node.ram}"/></div><div class="field"><label>vCPU</label><input name="cpus" type="number" min="1" max="64" value="${node.cpus}"/></div></div><div class="form-grid"><div class="field"><label>Сетевая карта</label><select name="nicModel"><option>e1000</option><option>virtio-net-pci</option><option>rtl8139</option></select></div><div class="field"><label>Диск</label><select name="diskBus"><option>virtio</option><option>ide</option><option>scsi</option></select></div></div><div class="field"><label>Тип</label><select name="kind">${[['router','Маршрутизатор'],['switch','Коммутатор'],['firewall','Межсетевой экран'],['server','Сервер'],['pc','Компьютер']].map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></div><div class="field"><label>Обозначения интерфейсов</label><select name="portStyle">${portStyleOptions(node.portStyle||'auto')}</select></div><div class="field"><label>Количество Ethernet-интерфейсов (1–16)</label><input name="nicCount" type="number" min="1" max="16" value="${nicCount(node)}"/></div><p class="muted">Число сетевых карт и параметры VM меняются только при остановленной лаборатории. Кабели можно менять на горячую.</p></div><div class="modal-footer"><button class="secondary cancel" type="button">Отмена</button><button class="primary" type="submit">Сохранить</button></div></form>`;

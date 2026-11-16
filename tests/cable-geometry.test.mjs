@@ -49,3 +49,20 @@ test('Geometry and badge placement do not depend on input cable order',()=>{
  };
  assert.deepEqual(render(links),render([...links].reverse()));
 });
+
+
+test('Parallel links remain ordered when local port numbers are reversed',()=>{
+ const lab={nodes:[node('left',40,60),node('right',470,60)],links:[
+  link('z-link','left','right',0,7),
+  link('a-link','right','left',2,5),
+  link('m-link','left','right',9,0)
+ ]};
+ const points=layoutParallelCables(lab);
+ const cables=lab.links.map(l=>({id:l.id,left:(l.a==='left'?points.get(l.id).A:points.get(l.id).B).y,right:(l.b==='right'?points.get(l.id).B:points.get(l.id).A).y}));
+ for(const a of cables)for(const b of cables)if(a.id!==b.id){
+  assert.equal(Math.sign(a.left-b.left),Math.sign(a.right-b.right),'Parallel cable order reversed at an endpoint');
+ }
+ const changed={...lab,links:lab.links.map(l=>({...l,aPort:10-l.aPort,bPort:10-l.bPort}))};
+ const pointsAfter=layoutParallelCables(changed);
+ assert.deepEqual(Object.fromEntries(points),Object.fromEntries(pointsAfter),'Changing port numbers must not rearrange attachment points');
+});

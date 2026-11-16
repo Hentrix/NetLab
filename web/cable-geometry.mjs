@@ -53,7 +53,11 @@ export function layoutParallelCables(lab){
     endpoints.sort((a,b)=>{
       const pa=deviceCenter(a.other),pb=deviceCenter(b.other);
       const projection=(vertical?pa.y-pb.y:pa.x-pb.x);
-      return projection||a.port-b.port||String(a.linkId).localeCompare(String(b.linkId));
+      // The same cable must occupy the same rank at *both* devices.
+      // Sorting by the local NIC index would reverse the bundle when the
+      // port assignment is crossed (e.g. eth0->ether3, eth1->ether1).
+      // The shared, stable link ID is independent of port numbers and A/B order.
+      return projection||String(a.linkId).localeCompare(String(b.linkId));
     });
     endpoints.forEach((end,i)=>{end.point=sideAnchor(end.node,end.side,i,endpoints.length);end.slot=i;end.sideCount=endpoints.length;});
   }

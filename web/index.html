@@ -13,15 +13,15 @@
     <div class="logo"><span class="logo-mark">N</span><div><strong>NetLab</strong><small>Network emulation</small></div></div>
     <div class="side-section-caption">РАБОЧЕЕ ПРОСТРАНСТВО</div>
     <nav class="nav">
-      <button class="nav-item active" data-view="labs"><span class="ico">▦</span> Лаборатории <span id="labCount" class="count"></span></button>
-      <button class="nav-item" data-view="images"><span class="ico">▤</span> Образы <span id="imageCount" class="count"></span></button>
-      <button class="nav-item" data-view="system"><span class="ico">⚙</span> Система</button>
+      <button class="nav-item active" data-view="labs"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span> Лаборатории <span id="labCount" class="count"></span></button>
+      <button class="nav-item" data-view="images"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/><circle cx="17" cy="16" r="1"/></svg></span> Образы <span id="imageCount" class="count"></span></button>
+      <button class="nav-item" data-view="system"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.5 1.5m11.2 11.2 1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/></svg></span> Система</button>
     </nav>
     <div class="side-labs">
-      <div class="side-heading"><span>МОИ ЛАБОРАТОРИИ</span><button id="quickNew" title="Создать лабораторию">＋</button></div>
+      <div class="side-heading"><span>МОИ ЛАБОРАТОРИИ</span><button id="quickNew" title="Создать лабораторию"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 4v16M4 12h16"/></svg></button></div>
       <div id="labList" class="lab-list"></div>
     </div>
-    <div class="sidebar-footer"><span class="online-dot"></span> NetLab Core <span class="muted">v0.6.8</span></div>
+    <div class="sidebar-footer"><span class="online-dot"></span> NetLab Core <span class="muted">v0.6.9</span></div>
   </aside>
   <main class="main">
     <header class="topbar">
@@ -29,13 +29,13 @@
       <div class="header-right"><span id="serverHealth" class="pill muted-pill">● Проверка сервера</span><button id="signOut" class="ghost small">Сменить токен</button></div>
     </header>
     <div id="viewLabs" class="view">
-      <div class="workspace-header"><div><h1 id="labTitle">Лаборатории</h1><p id="labSubtitle">Создайте лабораторию и добавьте виртуальные устройства</p></div><div class="actions"><button id="newLab" class="secondary">＋ Новая лаборатория</button><button id="startAll" class="primary lab-action" disabled><span aria-hidden="true">▷</span> Запустить всё</button><button id="stopAll" class="secondary lab-action" disabled><span aria-hidden="true">▢</span> Остановить</button><button id="snapshotLab" class="secondary lab-action" disabled title="Сохранить топологию целиком как PNG"><span aria-hidden="true">◷</span> Снимок</button><span class="lab-action-separator" aria-hidden="true"></span><button id="labMore" class="secondary lab-menu-button lab-action" title="Действия с лабораторией" aria-label="Действия с лабораторией">⋯</button></div></div>
+      <div class="workspace-header"><div><h1 id="labTitle">Лаборатории</h1><p id="labSubtitle">Создайте лабораторию и добавьте виртуальные устройства</p></div><div class="actions"><button id="newLab" class="secondary">＋ Новая лаборатория</button><button id="startAll" class="primary lab-action" disabled><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg></span> Запустить всё</button><button id="stopAll" class="secondary lab-action" disabled><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></span> Остановить</button><button id="snapshotLab" class="secondary lab-action" disabled title="Сохранить топологию целиком как PNG"><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="2"/><circle cx="12" cy="13" r="4"/><path d="M8 6V4h8v2"/></svg></span> Снимок</button><span class="lab-action-separator" aria-hidden="true"></span><button id="labMore" class="secondary lab-menu-button lab-action" title="Действия с лабораторией" aria-label="Действия с лабораторией"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button></div></div>
       <div id="noLab" class="empty-state"><div class="empty-icon">◇</div><h2>Создайте первую лабораторию</h2><p>Добавьте QEMU-образы и собирайте топологии как в EVE-NG и GNS3.</p><button id="emptyNew" class="primary">＋ Создать лабораторию</button></div>
       <div id="labWorkspace" class="workspace hidden">
         <div class="workarea">
           <aside class="device-explorer" id="deviceExplorer" aria-label="Устройства лаборатории">
             <div class="explorer-heading"><strong>Устройства</strong><span id="explorerCount" class="explorer-count">0</span><button type="button" id="explorerAdd" title="Добавить устройство" aria-label="Добавить устройство"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
-            <label class="explorer-search"><span aria-hidden="true">⌕</span><input id="explorerSearch" type="search" autocomplete="off" placeholder="Поиск устройств" aria-label="Поиск устройств"></label>
+            <label class="explorer-search"><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></span><input id="explorerSearch" type="search" autocomplete="off" placeholder="Поиск устройств" aria-label="Поиск устройств"></label>
             <div class="explorer-columns"><span>ИМЯ / ОБРАЗ</span><span>СТАТУС</span></div>
             <div class="explorer-groups" id="explorerGroups"></div>
             <button class="explorer-add-bottom" id="explorerAddBottom" type="button"><span>＋</span><span><strong>Добавить устройство</strong><small>или перетащите на поле</small></span></button>
@@ -53,11 +53,11 @@
               <button id="addNodeBtn" class="canvas-tool add-device-tool" title="Добавить устройство (+)" aria-label="Добавить устройство"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
             </div>
             <div class="canvas-zoom" aria-label="Масштаб полотна">
-              <button id="zoomOut" title="Уменьшить" aria-label="Уменьшить">−</button>
+              <button id="zoomOut" title="Уменьшить" aria-label="Уменьшить"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12h16"/></svg></button>
               <button id="zoomReset" title="Масштаб 100%"><span id="zoomValue">100%</span></button>
-              <button id="zoomIn" title="Увеличить" aria-label="Увеличить">＋</button>
-              <button id="zoomFit" title="Показать всё" aria-label="Показать всё">⛶</button>
-              <button id="toggleInspector" title="Скрыть/показать свойства устройства" aria-label="Показать/скрыть свойства">▤</button>
+              <button id="zoomIn" title="Увеличить" aria-label="Увеличить"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 4v16M4 12h16"/></svg></button>
+              <button id="zoomFit" title="Показать всё" aria-label="Показать всё"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 3H3v5m18 0V3h-5M3 16v5h5m8 0h5v-5"/></svg></button>
+              <button id="toggleInspector" title="Скрыть/показать свойства устройства" aria-label="Показать/скрыть свойства"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg></button>
             </div>
             <div id="marqueeRect" class="marquee-rect hidden"></div>
             <!-- Pan stays in an unscaled layer; CSS zoom rerenders crisp text and SVG labels. -->
