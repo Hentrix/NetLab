@@ -12,7 +12,7 @@ export async function exportTopology(lab: Lab, dark = false): Promise<void> {
   const width=Math.ceil(xmax-xmin+margin*2),height=Math.ceil(ymax-ymin+margin*2)
   const scale=2
   const canvas=document.createElement('canvas');canvas.width=width*scale;canvas.height=height*scale
-  const ctx=canvas.getContext('2d');if(!ctx)throw Error('Браузер не поддерживает Canvas')
+  const ctx=canvas.getContext('2d')!;if(!ctx)throw Error('Браузер не поддерживает Canvas')
   ctx.scale(scale,scale);ctx.translate(margin-xmin,margin-ymin)
   ctx.fillStyle=dark?'#171f29':'#ffffff';ctx.fillRect(xmin-margin,ymin-margin,width,height)
   ctx.fillStyle=dark?'#3b4858':'#d3dce1'

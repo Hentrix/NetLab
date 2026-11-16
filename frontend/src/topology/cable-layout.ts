@@ -14,7 +14,7 @@ export function connectionSide(node: Device, other: Device): Side {
   return Math.abs(dx) / DEVICE_WIDTH >= Math.abs(dy) / DEVICE_HEIGHT
     ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'bottom' : 'top')
 }
-function anchor(node: Device, side: Side, i: number, count: number): PortAnchor {
+function anchor(side: Side, i: number, count: number): PortAnchor {
   // A cable keeps its own socket; opposite port numbering cannot invert a bundle.
   const spacing = Math.min(22, (side === 'top' || side === 'bottom' ? 90 : 85) / Math.max(1, count - 1))
   const offset = (i - (count - 1) / 2) * spacing
@@ -46,7 +46,7 @@ export function layoutCables(nodes: Device[], links: Cable[]): Map<string, Cable
       const delta = vertical ? ac.y - bc.y : ac.x - bc.x
       return delta || a.id.localeCompare(b.id)
     })
-    bank.forEach((end, i) => { end.anchor = anchor(end.node, end.side, i, bank.length) })
+    bank.forEach((end, i) => { end.anchor = anchor(end.side, i, bank.length) })
   }
   const out = new Map<string, CableGeometry>()
   for (const [id, ends] of pairs) {

@@ -8,7 +8,7 @@ import { availablePorts, portLabel } from '@/api/client'
 import { layoutCables, type PortAnchor } from '@/topology/cable-layout'
 import DeviceNode from './DeviceNode.vue'
 import CableEdge from './CableEdge.vue'
-import type { Device, Cable } from '@/types'
+import type { Device } from '@/types'
 
 const store = useNetlabStore()
 const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void }>()
@@ -50,7 +50,7 @@ const edges = computed(() => current.value?.links.filter(link=>geometry.value.ha
 }))||[])
 // After adding/removing a cable, Vue Flow must remeasure DOM handles.
 const internalsKey = computed(() => `${store.labID}:${current.value?.nodes.map(n=>`${n.id}:${n.x},${n.y}`).join('|')}:${current.value?.links.map(l=>`${l.id}:${l.a}:${l.b}`).join('|')}`)
-watch(internalsKey,async()=>{await nextTick();for(const n of current.value?.nodes || []) updateNodeInternals(n.id)},{flush:'post'})
+watch(internalsKey,async()=>{await nextTick();updateNodeInternals((current.value?.nodes || []).map(n=>n.id))},{flush:'post'})
 watch(()=>store.labID,async()=>{firstCableNode.value=null;await nextTick();void fitView({padding:.22,duration:250})})
 const startName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.a)?.name || '')
 const endName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.b)?.name || '')
