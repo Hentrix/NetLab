@@ -9,7 +9,7 @@ import TerminalDock from '@/components/TerminalDock.vue'
 const store=useNetlabStore()
 const tokenEntry=ref(store.token)
 const page=ref<'labs'|'images'|'system'>('labs')
-const theme=ref(localStorage.getItem('netlab-theme')==='dark'?'dark':'light')
+const theme=ref<'light' | 'dark'>(localStorage.getItem('netlab-theme')==='dark'?'dark':'light')
 const newLab=ref('');const createLabOpen=ref(false)
 const addOpen=ref(false)
 const templateID=ref('vpcs');const imageID=ref('');const deviceName=ref('');const nicCount=ref(4)
