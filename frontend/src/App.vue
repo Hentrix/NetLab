@@ -179,11 +179,55 @@ const filteredTemplates=computed(()=>store.templates.filter(t=>
 ))
 function chooseTemplate(id:string){templateID.value=id;changeTemplate()}
 const filteredNodes=computed(()=>store.activeLab?.nodes.filter(n=>n.name.toLowerCase().includes(search.value.toLowerCase()))||[])
+// Match the categories from the original explorer, including independent groups.
 const deviceGroups=computed(()=>[
-  {id:'routers',title:'Маршрутизаторы',devices:filteredNodes.value.filter(n=>['router','switch','firewall'].includes(n.kind||''))},
+  {id:'router',title:'Маршрутизаторы',devices:filteredNodes.value.filter(n=>n.kind==='router')},
+  {id:'switch',title:'Коммутаторы',devices:filteredNodes.value.filter(n=>n.kind==='switch')},
+  {id:'firewall',title:'Межсетевые экраны',devices:filteredNodes.value.filter(n=>n.kind==='firewall')},
   {id:'endpoints',title:'Конечные устройства',devices:filteredNodes.value.filter(n=>!['router','switch','firewall'].includes(n.kind||''))}
 ].filter(group=>group.devices.length))
 const folded=ref<Record<string,boolean>>({})
+const topology=ref<InstanceType<typeof TopologyCanvas>|null>(null)
+const sidebarMenu=ref<{id:string;x:number;y:number}|null>(null)
+const sidebarMenuDevice=computed(()=>store.activeLab?.nodes.find(n=>n.id===sidebarMenu.value?.id))
+const sidebarMenuIsGroup=computed(()=>!!sidebarMenu.value&&store.selectedDeviceIDs.length>1&&store.selectedDeviceIDs.includes(sidebarMenu.value.id))
+function closeSidebarMenu(){sidebarMenu.value=null}
+function selectSidebarNode(device:Device,event:MouseEvent){
+  closeSidebarMenu()
+  const additive=event.ctrlKey||event.metaKey
+  store.clickDeviceInSidebar(device.id,additive)
+  if(!additive)topology.value?.centerDevice(device.id)
+}
+function openSidebarMenu(event:MouseEvent,node:Device){
+  event.preventDefault()
+  event.stopPropagation()
+  if(!store.selectedDeviceIDs.includes(node.id))store.selectDeviceGroup([node.id],node.id)
+  sidebarMenu.value={
+    id:node.id,
+    x:Math.max(8,Math.min(window.innerWidth-235,event.clientX)),
+    y:Math.max(8,Math.min(window.innerHeight-360,event.clientY))
+  }
+}
+function sidebarMenuAction(action:DeviceContextAction){
+  const item=sidebarMenuDevice.value
+  closeSidebarMenu()
+  if(item)void deviceContextAction({id:item.id,action})
+}
+function sidebarMenuBulk(){const ids=[...store.selectedDeviceIDs];closeSidebarMenu();openBulkFromCanvas(ids)}
+function closeSidebarMenuOnPointer(event:PointerEvent){
+  if(!(event.target as HTMLElement)?.closest('.sidebar-device-menu,.device-entry'))closeSidebarMenu()
+}
+function closeSidebarMenuOnKey(event:KeyboardEvent){if(event.key==='Escape')closeSidebarMenu()}
+onMounted(()=>{
+  document.addEventListener('pointerdown',closeSidebarMenuOnPointer,true)
+  document.addEventListener('keydown',closeSidebarMenuOnKey)
+})
+onBeforeUnmount(()=>{
+  document.removeEventListener('pointerdown',closeSidebarMenuOnPointer,true)
+  document.removeEventListener('keydown',closeSidebarMenuOnKey)
+})
+watch(()=>store.labID,closeSidebarMenu)
+
 const imageName=(device:Device)=>device.engine==='vpcs'?'VPCS · без образа':store.images.find(img=>img.id===device.imageId)?.name||device.kind||'QEMU'
 async function screenshot(){if(store.activeLab)try{await exportTopology(store.activeLab,dark.value)}catch(e){store.failure=(e as Error).message}}
 
@@ -357,18 +401,45 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
         <div v-if="store.activeLab" class="workspace">
           <aside class="device-list"><header>Устройства <button title="Добавить устройство" @click="openAdd"><Plus :size="17"/></button></header><input v-model="search" placeholder="Поиск устройств" aria-label="Поиск устройств"/><div class="list-scroll"><div v-for="group in deviceGroups" :key="group.id" class="device-category">
             <button class="device-category-title" @click="folded[group.id]=!folded[group.id]" :aria-expanded="!folded[group.id]"><ChevronDown :size="14" class="device-category-chevron" :class="{folded:folded[group.id]}"/>{{group.title}}<small>{{group.devices.length}}</small></button>
-            <template v-if="!folded[group.id]"><button v-for="node in group.devices" :key="node.id" class="device-entry" draggable="true" @dragstart="onDeviceDrag($event,node)" :class="{selected:store.selectedDeviceIDs.includes(node.id)}" :aria-pressed="store.selectedDeviceIDs.includes(node.id)" @click="store.clickDeviceInSidebar(node.id,$event.ctrlKey||$event.metaKey)">
+            <template v-if="!folded[group.id]"><button v-for="node in group.devices" :key="node.id" class="device-entry" draggable="true" @dragstart="onDeviceDrag($event,node)" :class="{selected:store.selectedDeviceIDs.includes(node.id)}" :aria-pressed="store.selectedDeviceIDs.includes(node.id)" @click="selectSidebarNode(node,$event)" @contextmenu="openSidebarMenu($event,node)">
               <img v-if="node.icon" :src="`/icons/${encodeURIComponent(node.icon)}`" alt=""/>
               <component :is="kindIcon(node.kind)==='pc'?Monitor:kindIcon(node.kind)==='shield'?Shield:kindIcon(node.kind)==='server'?Server:Router" v-else :size="22"/>
               <span><b>{{node.name}}</b><small>{{imageName(node)}}</small></span><i :class="node.status"/>
             </button></template>
           </div></div><button class="add-row" @click="openAdd"><Plus :size="16"/> Добавить устройство</button></aside>
-          <TopologyCanvas @console="consoleOpen" @add="openAdd" @add-at="openAddAt" @template-at="chooseDroppedTemplate" @delete-selection="deleteCanvasSelection" @bulk="openBulkFromCanvas" @device-action="deviceContextAction" />
+          <TopologyCanvas ref="topology" @console="consoleOpen" @add="openAdd" @add-at="openAddAt" @template-at="chooseDroppedTemplate" @delete-selection="deleteCanvasSelection" @bulk="openBulkFromCanvas" @device-action="deviceContextAction" />
           <aside class="inspector" :class="{'inspector-collapsed':inspectorCollapsed}">
             <button type="button" class="inspector-collapse-control" :title="inspectorCollapsed?'Развернуть свойства':'Свернуть свойства'" @click="inspectorCollapsed=!inspectorCollapsed">{{inspectorCollapsed?'‹':'›'}}</button>
             <template v-if="!inspectorCollapsed&&store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
-            <template v-if="selectedTab==='overview'"><div class="inspector-content"><label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong><label>vCPU / RAM</label><strong>{{store.selectedNode.engine==='vpcs'?'—':`${store.selectedNode.cpus||1} / ${store.selectedNode.ram||256} МБ`}}</strong><label>Интерфейсы</label><strong>{{store.selectedNode.nicCount||16}}</strong></div><div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
-            <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{cable.aPort}} ↔ {{cable.bPort}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
+            <template v-if="selectedTab==='overview'">
+              <div class="inspector-device-hero">
+                <img v-if="store.selectedNode.icon" :src="`/icons/${encodeURIComponent(store.selectedNode.icon)}`" alt="" />
+                <component v-else :is="kindIcon(store.selectedNode.kind)==='pc'?Monitor:Router" :size="32" />
+                <div><strong>{{store.selectedNode.name}}</strong><small>{{store.selectedNode.status==='running'?'● Запущен':store.selectedNode.status==='error'?'● Ошибка':'● Остановлен'}}</small></div>
+              </div>
+              <h4>Конфигурация</h4>
+              <div class="inspector-content">
+                <label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong>
+                <label>Образ</label><strong :title="imageName(store.selectedNode)">{{store.selectedNode.engine==='vpcs'?'Не требуется':imageName(store.selectedNode)}}</strong>
+                <label>Тип</label><strong>{{deviceKinds.find(k=>k.id===store.selectedNode?.kind)?.name||'Устройство'}}</strong>
+                <label>Консоль</label><strong>{{store.selectedNode.status==='running'?'Доступна':'Неактивна'}}</strong>
+              </div>
+              <h4>Ресурсы</h4>
+              <div class="inspector-content">
+                <template v-if="store.selectedNode.engine==='vpcs'">
+                  <label>Тип</label><strong>Лёгкий виртуальный ПК</strong>
+                </template>
+                <template v-else>
+                  <label>vCPU</label><strong>{{store.selectedNode.cpus||1}}</strong>
+                  <label>RAM</label><strong>{{store.selectedNode.ram||256}} МиБ</strong>
+                  <label>Сетевая карта</label><strong>{{store.selectedNode.nicModel||'e1000'}}</strong>
+                  <label>Шина диска</label><strong>{{store.selectedNode.diskBus||'ide'}}</strong>
+                </template>
+                <label>Интерфейсы</label><strong>{{store.selectedNode.engine==='vpcs'?1:(store.selectedNode.nicCount||16)}}</strong>
+              </div>
+              <p v-if="store.selectedNode.error" class="inspector-node-error">{{store.selectedNode.error}}</p>
+              <div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button :disabled="store.selectedNode.status!=='running'" @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
+            <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{portLabel(store.activeLab?.nodes.find(n=>n.id===cable.a),cable.aPort)}} ↔ {{portLabel(store.activeLab?.nodes.find(n=>n.id===cable.b),cable.bPort)}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
           </template><div v-else-if="!inspectorCollapsed" class="inspector-empty">Выберите устройство<br/>на топологии</div></aside>
         </div>
         <div v-else class="empty-panel"><Router :size="38"/><h2>Создайте лабораторию</h2><p>Устройства, кабели и настройки будут сохранены на Debian-сервере.</p><button class="primary" @click="createLabOpen=true"><Plus :size="16"/> Новая лаборатория</button></div>
@@ -380,6 +451,27 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
       <template v-else><SystemOverview /></template>
       <div v-if="store.failure" role="alert" class="error-toast" @click="store.failure=''">{{store.failure}} <X :size="16"/></div>
     </main>
+    <div v-if="sidebarMenu&&sidebarMenuDevice" class="device-context-menu sidebar-device-menu" role="menu"
+      :aria-label="'Действия с '+sidebarMenuDevice.name" :style="{position:'fixed',left:sidebarMenu.x+'px',top:sidebarMenu.y+'px',zIndex:110}">
+      <template v-if="sidebarMenuIsGroup">
+        <div class="device-context-heading">Выбрано устройств: {{store.selectedDeviceIDs.length}}</div>
+        <button type="button" role="menuitem" @click="sidebarMenuBulk"><Monitor :size="15"/> Массовые действия</button>
+      </template>
+      <template v-else>
+        <div class="device-context-heading">{{sidebarMenuDevice.name}} <small>{{sidebarMenuDevice.status==='running'?'Запущен':'Остановлен'}}</small></div>
+        <button type="button" role="menuitem" :disabled="sidebarMenuDevice.status!=='running'" @click="sidebarMenuAction('console')"><TerminalSquare :size="15"/> Открыть консоль</button>
+        <button v-if="sidebarMenuDevice.status!=='running'" type="button" role="menuitem" @click="sidebarMenuAction('start')"><Play :size="15"/> Запустить</button>
+        <button v-else type="button" role="menuitem" @click="sidebarMenuAction('stop')"><Square :size="15"/> Остановить</button>
+        <div class="device-context-divider"/>
+        <button type="button" role="menuitem" @click="sidebarMenuAction('rename')"><Pencil :size="15"/> Переименовать</button>
+        <button type="button" role="menuitem" @click="sidebarMenuAction('ports')"><Cable :size="15"/> Интерфейсы и скорости</button>
+        <button type="button" role="menuitem" @click="sidebarMenuAction('icon')"><Router :size="15"/> Выбрать иконку</button>
+        <button v-if="sidebarMenuDevice.engine!=='vpcs'" type="button" role="menuitem" :disabled="sidebarMenuDevice.status==='running'" @click="sidebarMenuAction('hardware')"><HardDrive :size="15"/> Настройки устройства</button>
+        <button type="button" role="menuitem" @click="sidebarMenuAction('log')"><Activity :size="15"/> Журнал QEMU/VPCS</button>
+        <div class="device-context-divider"/>
+        <button type="button" role="menuitem" class="danger" :disabled="sidebarMenuDevice.status==='running'" @click="sidebarMenuAction('delete')"><Trash2 :size="15"/> Удалить устройство</button>
+      </template>
+    </div>
     <TerminalDock ref="terminal" :theme="theme" />
     <div v-if="deviceLogOpen" class="dialog-overlay" @click.self="deviceLogOpen=false">
       <div class="dialog-card device-log-dialog" role="dialog" :aria-label="'Журнал '+deviceLogName">

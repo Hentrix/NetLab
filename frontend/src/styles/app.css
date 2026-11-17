@@ -316,3 +316,14 @@
 .vue-flow__node-device.selected .network-handle.create-source {
   opacity:1!important;
 }
+
+/* Legacy explorer and rich inspector parity */
+.device-entry.selected{background:var(--accent-soft);box-shadow:inset 3px 0 var(--accent)}
+.sidebar-device-menu{max-height:min(430px,calc(100dvh - 16px));overflow:auto}
+.inspector-device-hero{display:flex;align-items:center;gap:12px;padding:10px 16px 16px;border-bottom:1px solid var(--border)}
+.inspector-device-hero>img,.inspector-device-hero>svg{width:38px;height:38px;object-fit:contain;flex:none}
+.inspector-device-hero>div{display:grid;gap:5px;min-width:0}
+.inspector-device-hero strong{overflow-wrap:anywhere}
+.inspector-device-hero small{color:var(--muted);font-size:11px}
+.inspector-node-error{margin:12px;padding:10px;border:1px solid #a94450;border-radius:5px;color:#e56d75;overflow-wrap:anywhere}
+.inspector-content strong{min-width:0;overflow-wrap:anywhere;text-align:right}
