@@ -35,3 +35,21 @@ test('toolbar matches legacy order without overlap-prone keyboard hint', () => {
   }
   assert.doesNotMatch(canvas,/class="canvas-selection-hint"/)
 })
+
+test('left Ctrl and Meta click preserve selection across device hover updates', () => {
+  assert.match(canvas, /:multi-selection-key-code="\['Control','Meta'\]"/)
+  assert.match(canvas, /selected:selectedOnCanvas\.value\.includes\(device\.id\)/)
+  assert.match(canvas, /selected:selectedOnCanvas\.value\.includes\(`annotation:\$\{annotation\.id\}`\)/)
+  assert.match(canvas, /@selection-change="selectionChanged"/)
+  assert.match(canvas, /selectedOnCanvas\.value=event\.nodes\.map\(node=>node\.id\)/)
+})
+
+test('device click keeps a visible selection border after mouse leaves', () => {
+  const css=read('../src/styles/app.css')
+  const device=read('../src/components/DeviceNode.vue')
+  assert.match(canvas,/selected:selectedOnCanvas\.value\.includes\(device\.id\)/)
+  assert.match(canvas,/selected:selectedOnCanvas\.value\.includes\(device\.id\)\}/)
+  assert.match(device,/device-selected':data\.selected/)
+  assert.match(css,/\.vue-flow__node-device\.selected \.device-node/)
+  assert.match(css,/\.device-node\.device-selected/)
+})

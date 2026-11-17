@@ -299,3 +299,20 @@
   .icon-picker-dialog{height:calc(100dvh - 20px);max-height:calc(100dvh - 20px);padding:12px}
   .icon-picker-dialog .icon-category-row{max-height:55px;overflow:auto}
 }
+
+/* Persistent device selection is separate from hover (legacy editor parity).
+   Vue Flow adds .selected on the node wrapper; hovered devices only use :hover. */
+.vue-flow__node-device.selected .device-node,
+.vue-flow__node-device:has(.device-node.device-selected) .device-node {
+  background:var(--accent-soft);
+  box-shadow:0 0 0 2px var(--accent),0 0 0 5px color-mix(in srgb,var(--accent) 15%,transparent);
+  border-radius:8px;
+}
+.vue-flow__node-device.selected .device-label,
+.vue-flow__node-device .device-node.device-selected .device-label {
+  color:var(--ink);
+  font-weight:750;
+}
+.vue-flow__node-device.selected .network-handle.create-source {
+  opacity:1!important;
+}

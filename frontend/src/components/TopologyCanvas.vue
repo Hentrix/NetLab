@@ -498,16 +498,19 @@ const portsByNode = computed(() => {
 const nodes = computed(() => [
   ...(current.value?.nodes.map(device=>({
     id:device.id,type:'device',position:{x:device.x,y:device.y},
+    selected:selectedOnCanvas.value.includes(device.id),
     draggable:!panMode.value,selectable:!panMode.value,
     data:{device,anchors:portsByNode.value.get(device.id)||[],
       hovered:hoveredDeviceID.value===device.id,
-      connected:connectedHoverDevices.value.has(device.id)}
+      connected:connectedHoverDevices.value.has(device.id),
+      selected:selectedOnCanvas.value.includes(device.id)}
   }))||[]),
   ...(current.value?.annotations||[]).map(annotation=>{
     const preview=resizePreview.value?.id===annotation.id?resizePreview.value.rect:null
     const shown=preview?{...annotation,...preview}:annotation
     return {
       id:`annotation:${annotation.id}`,type:'annotation',
+      selected:selectedOnCanvas.value.includes(`annotation:${annotation.id}`),
       position:{x:shown.x,y:shown.y},draggable:!panMode.value&&!resizeState.value,
       selectable:!panMode.value,data:{annotation:shown}
     }
@@ -604,7 +607,8 @@ function closeEditor(){editingID.value=null}
 <template>
   <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @pointerdown.capture="startAnnotationGesture" @mousedown.capture="preventMiddleAutoscroll" @auxclick="preventMiddleAutoscroll" @dragover="onCanvasDragOver" @drop="onCanvasDrop" @click.self="dismissContextMenu();closeDeviceContext();closeCanvasContext()">
     <VueFlow id="netlab-topology" :nodes="nodes" :edges="edges" :nodes-draggable="!panMode" :nodes-connectable="!panMode"
-      :elements-selectable="!panMode" :pan-on-drag="panMode ? [0,1] : [1]" :selection-on-drag="!panMode"
+       :elements-selectable="!panMode" :pan-on-drag="panMode ? [0,1] : [1]" :selection-on-drag="!panMode"
+      :multi-selection-key-code="['Control','Meta']"
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
       @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="paneClickAt" @pane-double-click="paneDoubleClick" @pane-context-menu="openPaneContext" @selection-change="selectionChanged">
       <Background pattern-color="var(--grid)" :gap="20" :size="1" />
