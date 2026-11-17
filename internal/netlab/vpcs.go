@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 )
 
 // Debian 13 ships VPCS 0.5b2. UDP mode is supported by both it and newer
@@ -144,7 +145,14 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 		log.Printf("VPCS exited: lab=%s node=%s pid=%d result=%v", l.ID, n.ID, cmd.Process.Pid, waitErr)
 		transport.close()
 		_ = master.Close()
-		<-consoleReaderDone // flush PTY output before reporting the exit error
+		// Closing the PTY master does not guarantee that a blocked reader
+		// returns immediately on all Linux kernels. Never keep the node
+		// marked running (or block Stop) while waiting for terminal logs.
+		select {
+		case <-consoleReaderDone:
+		case <-time.After(500 * time.Millisecond):
+			log.Printf("VPCS PTY reader: delayed shutdown lab=%s node=%s", l.ID, n.ID)
+		}
 		e.mu.Lock()
 		if waitErr != nil {
 			ins.err = fmt.Sprintf("VPCS завершился: %v. Журнал: %s", waitErr, tailLog(filepath.Join(runtime, "vpcs.log")))

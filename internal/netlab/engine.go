@@ -139,10 +139,9 @@ func (e *Engine) WriteConsole(lab, node, text string) error {
 		if i.cmd == nil || i.cmd.Process == nil {
 			return errors.New("процесс VPCS недоступен")
 		}
-		// Ctrl+C must reach the isolated VPCS process group, never the
-		// API daemon. Writing ETX to the PTY may generate SIGINT for the
-		// terminal foreground group, which is not reliably VPCS when the
-		// PTY has no controlling session (Debian 13 / systemd).
+		// VPCS handles Ctrl+C differently in its interactive readline (raw
+		// mode, requiring ETX) and running commands (SIGINT handler).
+		// Both paths are needed; the VPCS process group is isolated from API.
 		return writeVPCSConsole(i.console, text, func() error {
 			return syscall.Kill(-i.cmd.Process.Pid, syscall.SIGINT)
 		})
@@ -150,10 +149,10 @@ func (e *Engine) WriteConsole(lab, node, text string) error {
 	return i.console.write(text)
 }
 
-// writeVPCSConsole sends regular keyboard input through PTY but translates
-// the terminal interrupt character into a signal addressed ONLY to the
-// VPCS process group (StartVPCS sets Setpgid=true). It never writes ETX to
-// the PTY, preventing accidental signals to the NetLab HTTP daemon.
+// writeVPCSConsole sends ETX to VPCS' raw-mode readline to cancel the
+// current input line, then sends SIGINT to its isolated process group to
+// interrupt long-running commands (VPCS 0.5b2 uses both mechanisms).
+// StartVPCS uses Setpgid=true, so SIGINT cannot reach NetLab's daemon group.
 func writeVPCSConsole(c *Console, input string, interrupt func() error) error {
 	for len(input) > 0 {
 		index := strings.IndexByte(input, 0x03)
@@ -164,6 +163,9 @@ func writeVPCSConsole(c *Console, input string, interrupt func() error) error {
 			if err := c.write(input[:index]); err != nil {
 				return err
 			}
+		}
+		if err := c.write("\x03"); err != nil {
+			return fmt.Errorf("отправка Ctrl+C в PTY VPCS: %w", err)
 		}
 		if err := interrupt(); err != nil {
 			return fmt.Errorf("прерывание команды VPCS: %w", err)
@@ -435,6 +437,23 @@ func qmpQuit(path string) error {
 	}
 	return nil
 }
+// waitForInstanceStop never waits indefinitely, even if process reaping or
+// transport cleanup is stuck. Force termination after the grace period.
+func waitForInstanceStop(done <-chan struct{}, force func(), grace, afterKill time.Duration) error {
+	select {
+	case <-done:
+		return nil
+	case <-time.After(grace):
+		force()
+	}
+	select {
+	case <-done:
+		return nil
+	case <-time.After(afterKill):
+		return errors.New("процесс принудительно завершён, но очистка NetLab не завершилась; проверьте журнал netlab")
+	}
+}
+
 func (e *Engine) Stop(lab, node string) error {
 	e.mu.Lock()
 	ins := e.instances[key(lab, node)]
@@ -443,18 +462,23 @@ func (e *Engine) Stop(lab, node string) error {
 		return nil
 	}
 	e.mu.Unlock()
+	if ins.cmd == nil || ins.cmd.Process == nil {
+		return errors.New("не найден процесс устройства; проверьте журнал NetLab")
+	}
+	pid := ins.cmd.Process.Pid
 	if ins.engine == "vpcs" {
-		_ = ins.cmd.Process.Signal(syscall.SIGTERM)
+		// Signal only VPCS' own process group; never the API server.
+		_ = syscall.Kill(-pid, syscall.SIGTERM)
 	} else if err := qmpQuit(ins.qmp); err != nil {
 		_ = ins.cmd.Process.Signal(syscall.SIGTERM)
 	}
-	select {
-	case <-ins.done:
-	case <-time.After(5 * time.Second):
-		_ = ins.cmd.Process.Kill()
-		<-ins.done
-	}
-	return nil
+	return waitForInstanceStop(ins.done, func() {
+		if ins.engine == "vpcs" {
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+		} else {
+			_ = ins.cmd.Process.Kill()
+		}
+	}, 3*time.Second, 2*time.Second)
 }
 func (e *Engine) Cleanup(l Lab) {
 	for _, n := range l.Nodes {
