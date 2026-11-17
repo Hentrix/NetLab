@@ -262,3 +262,40 @@
 .ui-select-disabled{opacity:.55}
 .ui-select-popup::-webkit-scrollbar{width:8px}
 .ui-select-popup::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
+
+/* Stable icon browser: filtered categories do not resize the entire dialog. */
+.icon-picker-dialog{
+  width:min(900px,calc(100vw - 32px));
+  height:min(720px,calc(100dvh - 40px));
+  max-height:calc(100dvh - 40px);
+  min-height:0;
+  overflow:hidden;
+}
+.icon-picker-dialog h2,
+.icon-picker-dialog>input,
+.icon-picker-dialog .icon-category-row,
+.icon-picker-dialog .icon-result-count,
+.icon-picker-dialog .icon-load-more,
+.icon-picker-dialog .dialog-actions{flex-shrink:0}
+.icon-picker-dialog .icon-category-row{margin:4px 0}
+.icon-picker-dialog .icon-picker-list{
+  flex:1 1 0;
+  height:0;
+  min-height:0;
+  overflow-y:auto;
+  align-content:start;
+  grid-auto-rows:110px;
+  padding-right:5px;
+}
+.icon-picker-dialog .icon-picker-list button{
+  height:110px;
+  min-height:0;
+}
+.icon-picker-dialog .dialog-actions{margin-top:0}
+.rename-device-dialog{width:min(520px,calc(100vw - 32px))}
+.rename-device-dialog label{font-size:12px;color:var(--muted);font-weight:600}
+.rename-device-dialog input{width:100%;min-height:38px}
+@media(max-height:510px){
+  .icon-picker-dialog{height:calc(100dvh - 20px);max-height:calc(100dvh - 20px);padding:12px}
+  .icon-picker-dialog .icon-category-row{max-height:55px;overflow:auto}
+}
