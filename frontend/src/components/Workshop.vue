@@ -78,6 +78,7 @@ async function publish(){
  publishing.value=true;status.value=''
  try{
   const item=selectedDraft.value
+  if(!item)return
   const result=await store.publishWorkshop(item.lab.id,item.node.id,
     name.value.trim(),category.value,family.value.trim(),version.value.trim())
   status.value='Шаблон «'+result.name+'» опубликован. Теперь он доступен в каталоге устройств.'
