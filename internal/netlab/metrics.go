@@ -17,6 +17,7 @@ type HostMetrics struct {
 	MemoryUsedMiB  uint64     `json:"memoryUsedMiB"`
 	MemoryTotalMiB uint64     `json:"memoryTotalMiB"`
 	SavedAt        *time.Time `json:"savedAt"`
+	VMCapacity     VMCapacity `json:"vmCapacity"`
 }
 
 type metricSampler struct {
@@ -113,6 +114,9 @@ func (s *Server) metrics() HostMetrics {
 	var result HostMetrics
 	result.CPUPercent = s.sampler.sampleCPU()
 	result.MemoryUsedMiB, result.MemoryTotalMiB, _ = memTimes("/proc/meminfo")
+	s.store.mu.Lock()
+	result.VMCapacity=s.capacityLocked()
+	s.store.mu.Unlock()
 	if info, err := os.Stat(s.store.path); err == nil {
 		timestamp := info.ModTime()
 		result.SavedAt = &timestamp
