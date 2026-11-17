@@ -18,6 +18,13 @@ const store = useNetlabStore()
 type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'|'log'
 const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'add-at',position:{x:number;y:number}):void; (e:'bulk', ids:string[]):void; (e:'device-action', payload:{id:string;action:DeviceContextAction}):void; (e:'delete-selection',ids:string[]):void; (e:'template-at',payload:{templateID:string;x:number;y:number}):void }>()
 const { fitView, zoomIn, zoomOut, setViewport, updateNodeInternals, viewport, screenToFlowCoordinate } = useVueFlow({ id:'netlab-topology' })
+const {setCenter}=useVueFlow({id:'netlab-topology'})
+function centerDevice(id:string){
+  const node=store.activeLab?.nodes.find(device=>device.id===id)
+  if(node)void setCenter(node.x+56,node.y+50,{zoom:viewport.value.zoom,duration:240})
+}
+defineExpose({centerDevice})
+
 const canvasElement=ref<HTMLElement|null>(null)
 // Keep the native browser middle-click autoscroll from competing with Vue Flow.
 function preventMiddleAutoscroll(event:MouseEvent){
