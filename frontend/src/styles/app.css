@@ -341,3 +341,23 @@
 /* Compact system counters and accessible, visually hidden tool hint. */
 .nav-count{margin-left:auto;font-size:10px;color:var(--muted);font-weight:550}
 .sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+
+
+/* Node startup diagnostics: compact, non-modal errors in the topology. */
+.lab-failures{flex:none;margin:0 17px 10px;padding:10px 12px;border:1px solid #c7836270;border-radius:7px;background:var(--surface);display:flex;align-items:center;gap:14px;min-width:0}
+.lab-failures-heading{display:flex;flex:none;align-items:center;gap:8px;font-size:11px;color:#b46c49}
+.lab-failures-heading strong{font-weight:700}
+.lab-failures-heading span{color:var(--muted)}
+.lab-failures-items{display:flex;gap:6px;flex:1;min-width:0;overflow-x:auto}
+.lab-failures-items button{display:inline-flex;flex:none;align-items:center;gap:8px;max-width:260px;border:1px solid var(--border);border-radius:5px;background:var(--surface-2);color:var(--ink);font-size:11px;padding:6px 9px}
+.lab-failures-items button:hover{background:var(--surface-hover)}
+.lab-failures-items small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);max-width:145px}
+.device-entry i.has-error,.inspector-name i.has-error,.device-led.has-error{background:#d67c56}
+.device-entry .device-error-description{color:#c47a57}
+.device-has-error .device-label{color:#bc6d4f}
+.device-error-marker{position:absolute;right:4px;top:3px;display:grid;place-items:center;color:#d67c56;background:var(--surface);border:1px solid #d67c5680;border-radius:5px;width:23px;height:23px;z-index:2}
+.inspector-node-failure{display:grid;gap:8px;padding:12px 14px;margin:8px 11px;border:1px solid #c7836270;background:var(--surface-2);border-radius:7px;color:#b46c49}
+.inspector-node-failure .inspector-node-error{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink);font-size:11px}
+.inspector-node-failure button{justify-self:start;border:1px solid var(--border);background:var(--surface);padding:6px 9px;border-radius:5px;color:var(--accent)}
+.header-commands .retry-failed-action{border-color:#c7836290;color:#b46c49}
+@media(max-width:1140px){.lab-failures{flex-wrap:wrap}.lab-failures-heading span{display:none}.lab-failures-items{flex-basis:100%}}

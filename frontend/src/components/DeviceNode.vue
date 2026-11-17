@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Handle, Position } from '@vue-flow/core'
 import { computed } from 'vue'
-import { PlugZap, Router, Monitor } from '@lucide/vue'
+import { PlugZap, Router, Monitor, AlertTriangle } from '@lucide/vue'
 import type { Device } from '@/types'
 import type { PortAnchor, Side } from '@/topology/cable-layout'
 
@@ -15,6 +15,7 @@ function openContext(event:MouseEvent){
 }
 function deviceHover(event:MouseEvent,active:boolean){emit('device-hover',{id:props.data.device.id,active,event})}
 const device = computed(() => props.data.device)
+const hasError=computed(()=>device.value.status!=='running'&&!!device.value.error?.trim())
 const icon = computed(() => device.value.icon ? `/icons/${encodeURIComponent(device.value.icon)}` : '')
 const position = (side: Side) => ({ left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom })[side]
 const pointStyle = (point: PortAnchor) => ({
@@ -23,7 +24,7 @@ const pointStyle = (point: PortAnchor) => ({
 </script>
 <template>
   <div class="device-node" @mouseenter="deviceHover($event,true)" @mousemove="deviceHover($event,true)" @mouseleave="deviceHover($event,false)"
-    @contextmenu="openContext" :class="{'device-running': device.status === 'running','device-hovered':data.hovered,'device-connected-hover':data.connected,'device-selected':data.selected}" :title="device.name">
+    @contextmenu="openContext" :class="{'device-running': device.status === 'running','device-hovered':data.hovered,'device-connected-hover':data.connected,'device-selected':data.selected,'device-has-error':hasError}" :title="hasError?device.name+' — '+device.error:device.name">
     <!-- Existing cables use private, stable handles. Different interface numbers
          cannot snap three cables onto one generic VueFlow source handle. -->
     <Handle v-for="h in data.anchors || []" :key="`${h.end}-${h.linkId}`"
@@ -31,12 +32,13 @@ const pointStyle = (point: PortAnchor) => ({
       :style="pointStyle(h.anchor)" class="network-handle attached-handle" :class="{'port-handle-highlight':data.hovered||data.connected}" />
     <!-- Interactive connection handles: drag to connect, choose ports in dialog. -->
     <Handle id="create-target" type="target" :position="Position.Left" class="network-handle create-target" />
+    <span v-if="hasError" class="device-error-marker" :title="device.error" aria-label="Ошибка запуска"><AlertTriangle :size="15"/></span>
     <div class="device-image">
       <img v-if="icon" :src="icon" alt="" draggable="false" />
       <Monitor v-else-if="device.kind === 'pc'" :size="47" stroke-width="1.5" />
       <Router v-else :size="47" stroke-width="1.5" />
     </div>
-    <div class="device-label"><i class="device-led" :class="device.status" />{{ device.name }}</div>
+    <div class="device-label"><i class="device-led" :class="[device.status,{'has-error':hasError}]" />{{ device.name }}</div>
     <Handle id="create-source" type="source" :position="Position.Right" class="network-handle create-source" title="Соединить с другим устройством">
       <PlugZap :size="13" stroke-width="2.5" />
     </Handle>

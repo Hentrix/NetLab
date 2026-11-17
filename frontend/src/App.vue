@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiSelect from '@/components/UiSelect.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { LayoutDashboard, HardDrive, Wrench, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, GitBranch, Pencil, LogOut, X, ChevronDown } from '@lucide/vue'
+import { LayoutDashboard, HardDrive, Wrench, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, GitBranch, Pencil, LogOut, X, ChevronDown, AlertTriangle } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
 import { api, portLabel } from '@/api/client'
 import type { Device, Template, PortSpec } from '@/types'
@@ -355,6 +355,16 @@ async function savePorts(){
   }finally{portSaving.value=false}
 }
 async function removeCable(id:string){if(window.confirm('Отключить Ethernet-кабель?'))await store.disconnect(id)}
+const failedNodes=computed(()=>store.activeLab?.nodes.filter(node=>node.status!=='running'&&!!node.error?.trim())||[])
+const retryBusy=ref(false)
+async function retryFailedNodes(){
+ if(retryBusy.value||!failedNodes.value.length)return
+ const ids=failedNodes.value.map(node=>node.id)
+ retryBusy.value=true
+ try{await store.bulkNodes(ids,'start')}
+ catch(e){store.failure=(e as Error).message}
+ finally{retryBusy.value=false}
+}
 async function powerLab(op:'start'|'stop'){await store.labPower(op)}
 function kindIcon(kind?:string){return kind==='pc'?'pc':kind==='firewall'?'shield':kind==='server'?'server':'router'}
 function consoleOpen(device:Device){terminal.value?.open(device)}
@@ -427,25 +437,29 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
         <form class="login-card" @submit.prevent="login"><Router :size="34"/><h1>Вход в NetLab</h1><p>Токен администратора хранится только в текущей вкладке браузера.</p><label>Токен<input v-model="tokenEntry" type="password" autocomplete="off" required/></label><button class="primary" type="submit">Войти</button></form>
       </template>
       <template v-else-if="page==='labs'">
-        <header class="page-title"><div><h1>{{store.activeLab?.name||'Лаборатории'}}</h1><p>Редактор сетевой топологии · Vue 3 + Vue Flow</p></div><div class="header-commands" v-if="store.activeLab"><button @click="powerLab('start')"><Play :size="16"/> Запустить всё</button><button @click="powerLab('stop')"><Square :size="16"/> Остановить всё</button><button @click="openBulk"><Monitor :size="16"/> Массовые действия</button><button @click="screenshot" title="Сохранить топологию в PNG"><Camera :size="16"/> Снимок</button><button title="Обновить" @click="store.refresh()"><RotateCcw :size="16"/></button><button class="danger" title="Удалить лабораторию" @click="removeLab"><Trash2 :size="16"/></button></div></header>
+        <header class="page-title"><div><h1>{{store.activeLab?.name||'Лаборатории'}}</h1><p>Редактор сетевой топологии · Vue 3 + Vue Flow</p></div><div class="header-commands" v-if="store.activeLab"><button @click="powerLab('start')"><Play :size="16"/> Запустить всё</button><button @click="powerLab('stop')"><Square :size="16"/> Остановить всё</button><button v-if="failedNodes.length" :disabled="retryBusy" class="retry-failed-action" @click="retryFailedNodes"><RotateCcw :size="16"/> Повторить ошибки ({{failedNodes.length}})</button><button @click="openBulk"><Monitor :size="16"/> Массовые действия</button><button @click="screenshot" title="Сохранить топологию в PNG"><Camera :size="16"/> Снимок</button><button title="Обновить" @click="store.refresh()"><RotateCcw :size="16"/></button><button class="danger" title="Удалить лабораторию" @click="removeLab"><Trash2 :size="16"/></button></div></header>
+        <section v-if="store.activeLab&&failedNodes.length" class="lab-failures" role="status" aria-label="Ошибки запуска устройств">
+          <div class="lab-failures-heading"><AlertTriangle :size="16"/><strong>Не запустились: {{failedNodes.length}}</strong><span>Выберите устройство, чтобы увидеть причину и журнал</span></div>
+          <div class="lab-failures-items"><button v-for="node in failedNodes" :key="node.id" type="button" :title="node.error" @click="store.selectDeviceGroup([node.id],node.id)">{{node.name}} <small>{{node.error}}</small></button></div>
+        </section>
         <div v-if="store.activeLab" class="workspace">
           <aside class="device-list"><header>Устройства <button title="Добавить устройство" @click="openAdd"><Plus :size="17"/></button></header><input v-model="search" placeholder="Поиск устройств" aria-label="Поиск устройств"/><div class="list-scroll"><div v-for="group in deviceGroups" :key="group.id" class="device-category">
             <button class="device-category-title" @click="folded[group.id]=!folded[group.id]" :aria-expanded="!folded[group.id]"><ChevronDown :size="14" class="device-category-chevron" :class="{folded:folded[group.id]}"/>{{group.title}}<small>{{group.devices.length}}</small></button>
             <template v-if="!folded[group.id]"><button v-for="node in group.devices" :key="node.id" class="device-entry" draggable="true" @dragstart="onDeviceDrag($event,node)" :class="{selected:store.selectedDeviceIDs.includes(node.id)}" :aria-pressed="store.selectedDeviceIDs.includes(node.id)" @click="selectSidebarNode(node,$event)" @contextmenu="openSidebarMenu($event,node)">
               <img v-if="node.icon" :src="`/icons/${encodeURIComponent(node.icon)}`" alt=""/>
               <component :is="kindIcon(node.kind)==='pc'?Monitor:kindIcon(node.kind)==='shield'?Shield:kindIcon(node.kind)==='server'?Server:Router" v-else :size="22"/>
-              <span><b>{{node.name}}</b><small>{{imageName(node)}}</small></span><i :class="node.status"/>
+              <span><b>{{node.name}}</b><small :title="node.error||imageName(node)" :class="{'device-error-description':node.status!=='running'&&node.error}">{{node.status!=='running'&&node.error?'Ошибка запуска':imageName(node)}}</small></span><i :class="[node.status,{'has-error':node.status!=='running'&&!!node.error}]"/>
             </button></template>
           </div></div><button class="add-row" @click="openAdd"><Plus :size="16"/> Добавить устройство</button></aside>
           <TopologyCanvas ref="topology" @console="consoleOpen" @add="openAdd" @add-at="openAddAt" @template-at="chooseDroppedTemplate" @delete-selection="deleteCanvasSelection" @bulk="openBulkFromCanvas" @device-action="deviceContextAction" />
           <aside class="inspector" :class="{'inspector-collapsed':inspectorCollapsed}">
             <button type="button" class="inspector-collapse-control" :title="inspectorCollapsed?'Развернуть свойства':'Свернуть свойства'" @click="inspectorCollapsed=!inspectorCollapsed">{{inspectorCollapsed?'‹':'›'}}</button>
-            <template v-if="!inspectorCollapsed&&store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
+            <template v-if="!inspectorCollapsed&&store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':store.selectedNode.error?'Ошибка запуска':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
             <template v-if="selectedTab==='overview'">
               <div class="inspector-device-hero">
                 <img v-if="store.selectedNode.icon" :src="`/icons/${encodeURIComponent(store.selectedNode.icon)}`" alt="" />
                 <component v-else :is="kindIcon(store.selectedNode.kind)==='pc'?Monitor:Router" :size="32" />
-                <div><strong>{{store.selectedNode.name}}</strong><small>{{store.selectedNode.status==='running'?'● Запущен':store.selectedNode.status==='error'?'● Ошибка':'● Остановлен'}}</small></div>
+                <div><strong>{{store.selectedNode.name}}</strong><small>{{store.selectedNode.status==='running'?'● Запущен':store.selectedNode.error?'● Ошибка запуска':'● Остановлен'}}</small></div>
               </div>
               <h4>Конфигурация</h4>
               <div class="inspector-content">
@@ -469,7 +483,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
                 </template>
                 <label>Интерфейсы</label><strong>{{store.selectedNode.engine==='vpcs'?1:(store.selectedNode.nicCount||16)}}</strong>
               </div>
-              <p v-if="store.selectedNode.error" class="inspector-node-error">{{store.selectedNode.error}}</p>
+              <div v-if="store.selectedNode.status!=='running'&&store.selectedNode.error" class="inspector-node-failure" role="alert"><AlertTriangle :size="16"/><p class="inspector-node-error">{{store.selectedNode.error}}</p><button type="button" @click="showDeviceLog(store.selectedNode)">Журнал устройства</button></div>
               <div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button :disabled="store.selectedNode.status!=='running'" @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button v-if="store.selectedNode.engine!=='vpcs'" :disabled="store.selectedNode.status!=='running'" @click="openGraphics(store.selectedNode)"><Monitor :size="15"/> Экран (VNC)</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
             <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{portLabel(store.activeLab?.nodes.find(n=>n.id===cable.a),cable.aPort)}} ↔ {{portLabel(store.activeLab?.nodes.find(n=>n.id===cable.b),cable.bPort)}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
           </template><div v-else-if="!inspectorCollapsed" class="inspector-empty">Выберите устройство<br/>на топологии</div></aside>

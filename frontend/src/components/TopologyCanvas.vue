@@ -62,7 +62,7 @@ function hoverDevice(payload:{id:string;active:boolean;event:MouseEvent}){
   const device=current.value?.nodes.find(node=>node.id===payload.id)
   if(!device)return
   const activePorts=(current.value?.links||[]).filter(link=>link.a===device.id||link.b===device.id).length
-  positionHoverTip(payload.event,`${device.name} · ${device.status==='running'?'Запущен':'Остановлен'} · Соединений: ${activePorts}`)
+  positionHoverTip(payload.event,`${device.name} · ${device.status==='running'?'Запущен':device.error?'Ошибка запуска: '+device.error:'Остановлен'} · Соединений: ${activePorts}`)
 }
 function hoverCable(id:string,active:boolean,event:MouseEvent){
   if(!active){

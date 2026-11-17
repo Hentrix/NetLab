@@ -45,10 +45,18 @@ func (s *Server) validateLabStart(l Lab) error {
  for _,n:=range l.Nodes {
   if n.Engine=="vpcs" {continue}
   img:=findImage(&s.store.State,n.ImageID)
-  if img==nil||img.isISO() {return fmt.Errorf("%s: дисковый образ не найден",n.Name)}
+  if img==nil||img.isISO() {
+   err:=errors.New("дисковый образ не найден")
+   s.engine.SetStartFailure(l.ID,n.ID,err)
+   return fmt.Errorf("%s: %w",n.Name,err)
+  }
   if n.InstallISOID!="" {
    iso:=findImage(&s.store.State,n.InstallISOID)
-   if iso==nil||!iso.isISO() {return fmt.Errorf("%s: установочный ISO не найден",n.Name)}
+   if iso==nil||!iso.isISO() {
+    err:=errors.New("установочный ISO не найден")
+    s.engine.SetStartFailure(l.ID,n.ID,err)
+    return fmt.Errorf("%s: %w",n.Name,err)
+   }
   }
  }
  return nil
