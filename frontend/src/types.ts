@@ -1,7 +1,7 @@
 export type DeviceStatus = 'running' | 'stopped' | 'error' | string
 export type DeviceKind = 'router' | 'switch' | 'pc' | 'firewall' | 'server' | string
 export interface Device {
-  id: string; name: string; imageId?: string; icon?: string
+  id: string; name: string; imageId?: string; installISOId?: string; icon?: string
   engine?: 'vpcs' | 'qemu'; kind?: DeviceKind; status?: DeviceStatus
   x: number; y: number; nicCount?: number; portStyle?: string; ports?: PortSpec[]; error?: string
   ram?: number; cpus?: number; nicModel?: string; diskBus?: string
@@ -23,10 +23,13 @@ export interface Lab {
   id: string; name: string; nodes: Device[]; links: Cable[]
   annotations?: Annotation[]
 }
-export interface ImageRecord { id: string; name: string; format?: string; size?: number; createdAt?: string }
+export interface ImageRecord {
+ id:string;name:string;format?:string;kind?:'disk'|'iso';category?:string
+ family?:string;version?:string;published?:boolean;draft?:boolean;size?:number;createdAt?:string
+}
 export interface Template {
   id: string; name: string; kind?: DeviceKind; engine?: 'vpcs' | 'qemu';
-  ram?: number; cpus?: number; portStyle?: string; nicCount?: number;
+  ram?: number; cpus?: number; imageId?: string; category?: string; family?: string; version?: string; portStyle?: string; nicCount?: number;
   nicModel?: string; diskBus?: string
 }
 export interface HostSystem {
