@@ -20,6 +20,8 @@ const available=computed(()=>caps.value.filter(x=>x.ok).length)
 const healthy=computed(()=>store.live&&caps.value.every(x=>x.ok)&&health.value.every(x=>x.ok))
 const cpu=computed(()=>typeof store.metrics?.cpuPercent==='number'?Math.max(0,Math.min(100,store.metrics.cpuPercent)):null)
 const ram=computed(()=>store.metrics?.memoryTotalMiB?Math.round((store.metrics.memoryUsedMiB||0)/store.metrics.memoryTotalMiB*100):null)
+const capacity=computed(()=>store.metrics?.vmCapacity)
+const guestRAMRatio=computed(()=>capacity.value?.reservationLimitMiB?Math.min(100,Math.round(capacity.value.allocatedRAMMiB/capacity.value.reservationLimitMiB*100)):0)
 const formatGiB=(mib:number)=>`${(mib/1024).toFixed(1)} ГБ`
 onMounted(()=>{void store.refreshSystem()})
 </script>
@@ -32,6 +34,17 @@ onMounted(()=>{void store.refreshSystem()})
       <article class="system-hero-card"><div class="system-kicker">ОБЩЕЕ СОСТОЯНИЕ</div><div class="system-health-row"><div class="system-health-icon" :class="{ready:healthy}"><CheckCircle2 v-if="healthy" :size="25"/><AlertTriangle v-else :size="25"/></div><div><strong>{{healthy?'Все компоненты готовы':'Требуется внимание'}}</strong><small>{{store.live?'API отвечает · проверка компонентов выполнена':'Нет подключения к NetLab API'}}</small></div></div><div class="system-hero-stats"><span><b>{{available}} / {{caps.length}}</b> компонентов</span><span><b>{{health.filter(x=>x.ok).length}} / {{health.length}}</b> проверки запуска</span></div></article>
       <article class="system-meter-card"><div class="system-meter-header"><Cpu :size="18"/><span>ЗАГРУЗКА CPU</span></div><div class="system-meter-number">{{cpu===null?'—':`${cpu.toFixed(1)}%`}}</div><div class="system-progress"><div :style="{width:`${cpu??0}%`}"/></div><small>{{cpu===null?'Ожидается второй замер CPU':'Использование процессора хоста'}}</small></article>
       <article class="system-meter-card"><div class="system-meter-header"><Layers3 :size="18"/><span>ОПЕРАТИВНАЯ ПАМЯТЬ</span></div><div class="system-meter-number">{{ram===null?'—':`${ram}%`}}</div><div class="system-progress"><div :style="{width:`${ram??0}%`}"/></div><small v-if="store.metrics?.memoryTotalMiB">{{formatGiB(store.metrics.memoryUsedMiB||0)}} из {{formatGiB(store.metrics?.memoryTotalMiB||0)}}</small><small v-else>Данные об использовании RAM недоступны</small></article>
+    </section>
+    <section class="vm-capacity-card" v-if="capacity" aria-label="Ресурсы виртуальных машин">
+      <div class="vm-capacity-heading"><div><h2>Ресурсы виртуальных машин</h2><p>Выделенные ресурсы QEMU, отдельно от фактической загрузки Debian</p></div><strong>{{capacity.runningVMs}} VM</strong></div>
+      <div class="vm-capacity-stats">
+        <span><b>{{formatGiB(capacity.allocatedRAMMiB)}}</b> RAM выделено</span>
+        <span><b>{{formatGiB(capacity.reservationLimitMiB)}}</b> лимит для VM</span>
+        <span><b>{{capacity.allocatedVCPUs}} / {{capacity.hostCPUs}}</b> vCPU / CPU хоста</span>
+        <span><b>{{formatGiB(capacity.hostAvailableMiB)}}</b> доступно Debian</span>
+      </div>
+      <div class="system-progress vm-capacity-progress"><div :style="{width:guestRAMRatio+'%'}"/></div>
+      <small>Перед запуском учитываются RAM остальных VM, MemAvailable и резерв минимум 512 МиБ для Debian. vCPU отображаются без жёсткого ограничения: возможна переподписка.</small>
     </section>
     <div class="system-section-title"><h2>Компоненты эмуляции</h2><span>{{available}} из {{caps.length}} доступны</span></div>
     <section class="system-components"><article v-for="item in caps" :key="item.id" class="system-component"><div class="system-component-icon"><component :is="item.icon" :size="20"/></div><div class="system-component-description"><strong>{{item.title}}</strong><small>{{item.detail}}</small></div><span class="system-chip" :class="{ok:item.ok}">{{item.ok?'Доступен':'Недоступен'}}</span></article></section>

@@ -415,6 +415,14 @@ func (s *Server) startNode(l Lab, n Node) (startErr error) {
 		iso:=findImage(&s.store.State,n.InstallISOID)
 		if iso==nil || !iso.isISO() { return fmt.Errorf("ISO установщика узла %s не найден",n.Name) }
 	}
+	// Admission runs under Store.mu for API and job callers, preventing two
+	// independent requests from simultaneously reserving the same host RAM.
+	if status,_:=s.engine.Status(l.ID,n.ID);status!="running" {
+		if s.engine.NodeBusy(l.ID,n.ID) {
+			return errors.New("предыдущий процесс VM ещё завершает очистку; повторите запуск")
+		}
+		if err:=evaluateAdmission(s.capacityLocked(),uint64(n.RAM));err!=nil {return err}
+	}
 	return s.engine.Start(l, n, *img)
 }
 

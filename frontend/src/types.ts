@@ -38,9 +38,13 @@ export interface HostSystem {
   vpcsSpawn?: boolean; vpcsSpawnError?: string
   recoveryReady?: boolean; recoveryError?: string
 }
+export interface VMCapacity {
+  runningVMs:number;allocatedRAMMiB:number;allocatedVCPUs:number
+  hostCPUs:number;hostRAMMiB:number;hostAvailableMiB:number;reservationLimitMiB:number
+}
 export interface HostMetrics {
   cpuPercent?: number | null; memoryUsedMiB?: number
-  memoryTotalMiB?: number; savedAt?: string | null
+  memoryTotalMiB?: number; savedAt?: string | null; vmCapacity?: VMCapacity
 }
 
 
