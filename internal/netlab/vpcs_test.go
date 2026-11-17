@@ -148,3 +148,15 @@ func TestStopWaitIsBoundedAfterKill(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestVPCSExitDiagnostic(t *testing.T) {
+	if got := vpcsExitDiagnostic(errors.New("signal: killed"), true, "does-not-exist"); got != "" {
+		t.Fatalf("intentional VPCS stop must not be reported as a crash: %q", got)
+	}
+	if got := vpcsExitDiagnostic(nil, false, "does-not-exist"); got != "" {
+		t.Fatalf("clean exit must not be reported as a crash: %q", got)
+	}
+	if got := vpcsExitDiagnostic(errors.New("exit status 1"), false, "does-not-exist"); !strings.Contains(got, "неожиданно завершился") {
+		t.Fatalf("unexpected VPCS failure must be reported: %q", got)
+	}
+}

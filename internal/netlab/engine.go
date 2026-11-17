@@ -82,6 +82,7 @@ type Instance struct {
 	qmp           string
 	err           string
 	status        string
+	stopRequested bool // guarded by Engine.mu; an intentional Stop is not a VM crash
 }
 type Engine struct {
 	mu         sync.Mutex
@@ -461,6 +462,7 @@ func (e *Engine) Stop(lab, node string) error {
 		e.mu.Unlock()
 		return nil
 	}
+	ins.stopRequested = true
 	e.mu.Unlock()
 	if ins.cmd == nil || ins.cmd.Process == nil {
 		return errors.New("не найден процесс устройства; проверьте журнал NetLab")
