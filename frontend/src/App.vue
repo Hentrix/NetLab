@@ -34,6 +34,15 @@ async function showDeviceLog(device:Device){
   finally{deviceLogLoading.value=false}
 }
 const batchCount=ref(1)
+const deviceKind=ref('router')
+const deviceIcon=ref('')
+const deviceRAM=ref(256)
+const deviceCPU=ref(1)
+const deviceNicModel=ref('e1000')
+const deviceDiskBus=ref('ide')
+const devicePortStyle=ref('eth')
+const deviceKinds=[{id:'router',name:'Маршрутизатор'},{id:'switch',name:'Коммутатор'},{id:'firewall',name:'Межсетевой экран'},{id:'server',name:'Сервер'},{id:'pc',name:'Компьютер'}]
+const defaultKindIcon:Record<string,string>={router:'Router.png',switch:'Layer 2 Switch.png',firewall:'Firewall.png',server:'Server.png',pc:'Desktop.png'}
 const templateID=ref('vpcs');const imageID=ref('');const deviceName=ref('');const nicCount=ref(4)
 const inFlight=ref(false)
 async function removeLab(){
@@ -98,23 +107,48 @@ const portStyleDraft=ref('eth')
 const portSaving=ref(false)
 const iconPickerOpen=ref(false)
 const iconDeviceID=ref('')
+const iconCategory=ref('all')
+const iconLimit=ref(84)
+const iconCategories=[
+  {id:'all',name:'Все'},{id:'router',name:'Маршрутизаторы'},{id:'switch',name:'Коммутаторы'},
+  {id:'firewall',name:'Безопасность'},{id:'server',name:'Серверы'},
+  {id:'pc',name:'ПК'},{id:'cloud',name:'Облака'},{id:'other',name:'Прочее'}
+]
+function categorizeIcon(name:string){
+  const lower=name.toLowerCase()
+  if(/router|asr|isr|mx|juniper|vmanage|vedge|cedge/.test(lower))return 'router'
+  if(/switch|nexus|catalyst|arista|qfx|vss/.test(lower))return 'switch'
+  if(/firewall|asa|forti|palo|checkpoint|sonicwall|sophos|f5|security|ips|ids/.test(lower))return 'firewall'
+  if(/server|storage|nas|vm|esxi|database|db|proxmox/.test(lower))return 'server'
+  if(/desktop|laptop|phone|tablet|android|pc|host/.test(lower))return 'pc'
+  if(/cloud|wan|internet|isp/.test(lower))return 'cloud'
+  return 'other'
+}
+async function loadIconCatalogue(){
+  if(iconCatalog.value.length)return
+  const response=await fetch('/icons.json',{cache:'force-cache'})
+  if(!response.ok)throw Error('Не удалось загрузить каталог иконок')
+  const files:unknown=await response.json()
+  if(!Array.isArray(files)||!files.every(f=>typeof f==='string'))throw Error('Неверный каталог иконок')
+  iconCatalog.value=files as string[]
+}
+function openCreateIconPicker(){iconDeviceID.value='';iconSearch.value='';iconCategory.value='all';iconLimit.value=84;iconPickerOpen.value=true;void loadIconCatalogue().catch(e=>{store.failure=(e as Error).message})}
 const iconSearch=ref('')
 const iconCatalog=ref<string[]>([])
-const iconMatches=computed(()=>iconCatalog.value.filter(icon=>icon.toLowerCase().includes(iconSearch.value.toLowerCase())).slice(0,120))
+const allIconMatches=computed(()=>iconCatalog.value.filter(icon=>
+  (iconCategory.value==='all'||categorizeIcon(icon)===iconCategory.value)&&
+  icon.toLocaleLowerCase().includes(iconSearch.value.trim().toLocaleLowerCase())
+))
+const iconMatches=computed(()=>allIconMatches.value.slice(0,iconLimit.value))
+watch([iconSearch,iconCategory],()=>{iconLimit.value=84})
 async function openIconPicker(device:Device){
-  iconDeviceID.value=device.id;iconSearch.value='';iconPickerOpen.value=true
-  if(!iconCatalog.value.length){
-    try {
-      const response=await fetch('/icons.json',{cache:'force-cache'})
-      if(!response.ok)throw new Error('Не удалось загрузить каталог иконок')
-      const files:unknown=await response.json()
-      if(!Array.isArray(files)||!files.every(file=>typeof file==='string'))throw new Error('Неверный каталог иконок')
-      iconCatalog.value=files as string[]
-    }catch(error){store.failure=(error as Error).message}
-  }
+  iconDeviceID.value=device.id;iconSearch.value='';iconCategory.value='all';iconLimit.value=84;iconPickerOpen.value=true
+  try{await loadIconCatalogue()}catch(error){store.failure=(error as Error).message}
 }
 async function chooseIcon(icon:string){
-  await store.updateNode(iconDeviceID.value,{icon});iconPickerOpen.value=false
+  if(!iconDeviceID.value){deviceIcon.value=icon;iconPickerOpen.value=false;return}
+  await store.updateNode(iconDeviceID.value,{icon})
+  iconPickerOpen.value=false
 }
 const portStyles=[{value:'eth',name:'eth0, eth1'},{value:'ether',name:'ether1, ether2'},{value:'gi',name:'Gi0/0, Gi0/1'},{value:'fa',name:'Fa0/0, Fa0/1'},{value:'ge',name:'GE0, GE1'},{value:'ens',name:'ens0, ens1'}]
 const speeds=[0,10,100,1000,10000,25000,40000,100000]
@@ -149,7 +183,7 @@ function openAdd(){
   templateID.value=store.templates[0]?.id||'vpcs'
   imageID.value=store.images[0]?.id||''
   deviceName.value=selectedTemplate.value?.name||'Устройство'
-  nicCount.value=selectedTemplate.value?.nicCount||4
+  changeTemplate()
   addOpen.value=true
 }
 function openAddAt(position:{x:number;y:number}){
@@ -166,15 +200,29 @@ function addFromImage(image:string){
   imageID.value=image
   page.value='labs'
 }
-function changeTemplate(){deviceName.value=selectedTemplate.value?.name||'Устройство';nicCount.value=selectedTemplate.value?.engine==='vpcs'?1:selectedTemplate.value?.nicCount||4}
+function changeTemplate(){
+  const t=selectedTemplate.value
+  deviceName.value=t?.name||'Устройство'
+  deviceKind.value=t?.engine==='vpcs'?'pc':t?.kind||'router'
+  deviceIcon.value=defaultKindIcon[deviceKind.value]||'Router.png'
+  nicCount.value=t?.engine==='vpcs'?1:t?.nicCount||4
+  deviceRAM.value=t?.ram||256
+  deviceCPU.value=t?.cpus||1
+  deviceNicModel.value=t?.nicModel||'e1000'
+  deviceDiskBus.value=t?.diskBus||'ide'
+  devicePortStyle.value=t?.portStyle||'eth'
+}
 async function addDevice(){
   const t:Template|undefined=selectedTemplate.value;if(!t||!store.activeLab)return
   inFlight.value=true
   try{
     const idx=store.activeLab.nodes.length
-    const payload: Partial<Device>={name:deviceName.value.trim()||t.name,kind:t.kind||'router',engine:t.engine||'qemu',imageId:t.engine==='vpcs'?'':imageID.value,
-      nicCount:t.engine==='vpcs'?1:nicCount.value,portStyle:t.portStyle||'eth',ram:t.ram||256,cpus:t.cpus||1,
-      nicModel:t.nicModel||'e1000',diskBus:t.diskBus||'ide',x:requestedNodePosition.value?.x??(100+(idx%5)*185),y:requestedNodePosition.value?.y??(130+Math.floor(idx/5)*150)}
+    const payload: Partial<Device>={name:deviceName.value.trim()||t.name,kind:t.engine==='vpcs'?'pc':deviceKind.value,
+      icon:deviceIcon.value||defaultKindIcon[deviceKind.value],engine:t.engine||'qemu',imageId:t.engine==='vpcs'?'':imageID.value,
+      nicCount:t.engine==='vpcs'?1:nicCount.value,portStyle:devicePortStyle.value,ram:t.engine==='vpcs'?128:deviceRAM.value,
+      cpus:t.engine==='vpcs'?1:deviceCPU.value,nicModel:t.engine==='vpcs'?'e1000':deviceNicModel.value,
+      diskBus:t.engine==='vpcs'?'ide':deviceDiskBus.value,
+      x:requestedNodePosition.value?.x??(100+(idx%5)*185),y:requestedNodePosition.value?.y??(130+Math.floor(idx/5)*150)}
     if(batchCount.value>1)await store.addNodesBatch(payload,batchCount.value)
     else await store.addNode(payload)
     addOpen.value=false
@@ -283,6 +331,9 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
         <h2>Параметры QEMU</h2>
         <p>Изменения применяются при следующем запуске. Для сохранения необходимо остановить все устройства лаборатории.</p>
         <p v-if="hardwareLocked" class="hardware-warning">Остановите лабораторию перед сохранением параметров.</p>
+        <label>Название<input v-model.trim="hardwareDraft.name" maxlength="80" required/></label>
+        <label>Тип устройства<select v-model="hardwareDraft.kind"><option v-for="kind in deviceKinds" :key="kind.id" :value="kind.id">{{kind.name}}</option></select></label>
+        <label>Обозначение интерфейсов<select v-model="hardwareDraft.portStyle"><option v-for="style in portStyles" :key="style.value" :value="style.value">{{style.name}}</option></select></label>
         <label>Образ диска<select v-model="hardwareDraft.imageId" required><option v-for="image in store.images" :key="image.id" :value="image.id">{{image.name}}</option></select></label>
         <div class="dialog-columns"><label>Оперативная память, МиБ<input v-model.number="hardwareDraft.ram" type="number" min="128" max="131072" required/></label>
         <label>vCPU<input v-model.number="hardwareDraft.cpus" type="number" min="1" max="64" required/></label></div>
@@ -307,13 +358,17 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
     <div v-if="iconPickerOpen" class="dialog-overlay" @click.self="iconPickerOpen=false">
       <div class="dialog-card icon-picker-dialog" role="dialog" aria-label="Каталог иконок">
         <h2>Выбрать иконку устройства</h2>
-        <input v-model="iconSearch" placeholder="Поиск среди 550 иконок" aria-label="Поиск иконок"/>
+        <input v-model="iconSearch" placeholder="Поиск по названию значка" aria-label="Поиск иконок"/>
+        <div class="icon-category-row"><button v-for="category in iconCategories" :key="category.id" type="button"
+          :class="{active:iconCategory===category.id}" @click="iconCategory=category.id">{{category.name}}</button></div>
+        <small class="icon-result-count">Найдено {{allIconMatches.length}} из {{iconCatalog.length}} значков</small>
         <div class="icon-picker-list">
           <button v-for="icon in iconMatches" :key="icon" type="button" @click="chooseIcon(icon)" :title="icon">
             <img :src="`/icons/${encodeURIComponent(icon)}`" alt=""/><span>{{icon.replace('.png','')}}</span>
           </button>
           <p v-if="!iconMatches.length">Иконки не найдены</p>
         </div>
+        <button v-if="iconLimit<allIconMatches.length" type="button" class="icon-load-more" @click="iconLimit+=84">Показать ещё ({{allIconMatches.length-iconMatches.length}})</button>
         <div class="dialog-actions"><button @click="iconPickerOpen=false">Закрыть</button></div>
       </div>
     </div>
@@ -347,9 +402,18 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
         </div>
         <label>Название<input v-model="deviceName" required maxlength="80"/></label>
         <label>Количество<input v-model.number="batchCount" type="number" min="1" max="32" required/></label>
+        <label v-if="selectedTemplate?.engine!=='vpcs'">Тип на схеме<select v-model="deviceKind" @change="deviceIcon=defaultKindIcon[deviceKind]||'Router.png'"><option v-for="kind in deviceKinds" :key="kind.id" :value="kind.id">{{kind.name}}</option></select></label>
+        <label>Значок на схеме<button type="button" class="device-icon-choice" @click="openCreateIconPicker">
+          <img v-if="deviceIcon" :src="`/icons/${encodeURIComponent(deviceIcon)}`" alt=""/>{{deviceIcon||'Выбрать значок'}} · Изменить
+        </button></label>
+        <label>Обозначение интерфейсов<select v-model="devicePortStyle"><option v-for="style in portStyles" :key="style.value" :value="style.value">{{style.name}}</option></select></label>
         <template v-if="selectedTemplate?.engine!=='vpcs'">
           <label>Образ<select v-model="imageID" required><option v-for="image in store.images" :key="image.id" :value="image.id">{{image.name}}</option></select></label>
-          <label>Число Ethernet-портов<input v-model.number="nicCount" type="number" min="1" max="32" required/></label>
+          <div class="dialog-columns"><label>RAM (МиБ)<input v-model.number="deviceRAM" type="number" min="128" max="131072" required/></label>
+          <label>vCPU<input v-model.number="deviceCPU" type="number" min="1" max="64" required/></label></div>
+          <div class="dialog-columns"><label>Сетевая карта<select v-model="deviceNicModel"><option value="virtio-net-pci">VirtIO</option><option value="e1000">Intel E1000</option><option value="rtl8139">RTL8139</option></select></label>
+          <label>Шина диска<select v-model="deviceDiskBus"><option value="virtio">VirtIO</option><option value="ide">IDE</option><option value="scsi">SCSI</option></select></label></div>
+          <label>Число Ethernet-портов<input v-model.number="nicCount" type="number" min="1" max="16" required/></label>
           <p v-if="!store.images.length">Для QEMU необходимо сначала загрузить образ в библиотеку.</p>
         </template>
         <p v-else>VPCS не требует образа диска. Доступен один интерфейс eth0.</p>
