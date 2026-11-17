@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiSelect from '@/components/UiSelect.vue'
 import { computed, ref } from 'vue'
 import { HardDrive, Plus, Search, RotateCcw, Trash2, Monitor } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
@@ -71,7 +72,7 @@ async function remove(image:ImageRecord){
     </form>
     <div class="image-library-toolbar">
       <label class="image-library-search"><Search :size="16"/><input v-model="query" aria-label="Поиск образов" placeholder="Поиск по имени или формату"/></label>
-      <label>Сортировка<select v-model="order" aria-label="Сортировка образов"><option value="name">По названию</option><option value="size">По размеру</option><option value="newest">Сначала новые</option></select></label>
+      <label>Сортировка<UiSelect v-model="order" aria-label="Сортировка образов"><option value="name">По названию</option><option value="size">По размеру</option><option value="newest">Сначала новые</option></UiSelect></label>
     </div>
     <div class="image-library-results">
       <article v-for="image in filtered" :key="image.id" class="image-library-item">
