@@ -136,17 +136,30 @@ async function open(device:Device){
   select(id)
   void stream(s)
 }
+// Fitting and focusing are independent operations: ResizeObserver can fire
+// while a tab switch is pending and must NEVER cancel keyboard focus.
 let focusRevision=0
-function fitActive(shouldFocus=false){
-  const s=active.value
-  if(!s||minimized.value)return
-  const revision=++focusRevision
+function fitActive(){
+  const session=active.value
+  if(!session||minimized.value)return
   requestAnimationFrame(()=>{
-    if(revision!==focusRevision||current.value!==s.id||minimized.value)return
-    if(!s.host.isConnected||s.host.clientWidth<=20||s.host.clientHeight<=20)return
-    s.fit.fit()
-    s.term.refresh(0,s.term.rows-1)
-    if(shouldFocus)s.term.focus()
+    if(current.value!==session.id||minimized.value||!session.host.isConnected)return
+    if(session.host.clientWidth<=20||session.host.clientHeight<=20)return
+    session.fit.fit()
+    session.term.refresh(0,session.term.rows-1)
+  })
+}
+async function focusSession(id:string){
+  const revision=++focusRevision
+  await nextTick()
+  requestAnimationFrame(()=>{
+    if(revision!==focusRevision||current.value!==id||minimized.value)return
+    const session=sessions.value.find(item=>item.id===id)
+    if(!session||!session.host.isConnected)return
+    if(session.host.clientWidth<=20||session.host.clientHeight<=20)return
+    // Resize may occur between showing a hidden tab and focusing it.
+    session.fit.fit()
+    session.term.focus()
   })
 }
 function select(id:string){
@@ -154,12 +167,16 @@ function select(id:string){
   current.value=id
   minimized.value=false
   for(const s of sessions.value)s.host.style.display=s.id===id?'block':'none'
-  void nextTick(()=>fitActive(true))
+  void focusSession(id)
+}
+function focusConsoleArea(){
+  if(current.value&&!minimized.value)void focusSession(current.value)
 }
 function close(id:string){
   const s=sessions.value.find(item=>item.id===id)
   if(!s)return
   s.abort.abort()
+  focusRevision++
   if(s.flushTimer!==null){clearTimeout(s.flushTimer);s.flushTimer=null}
   s.inputBuffer=''
   s.term.dispose()
@@ -179,7 +196,7 @@ function moveStart(event:PointerEvent){if(event.button!==0||maximized.value||(ev
 function move(event:PointerEvent){if(!dragging)return;left.value=Math.min(window.innerWidth-110,Math.max(0,dragging.left+event.clientX-dragging.x));top.value=Math.min(window.innerHeight-50,Math.max(0,dragging.top+event.clientY-dragging.y))}
 function moveEnd(){dragging=null}
 watch(dark,()=>{for(const s of sessions.value)s.term.options.theme=palette(dark.value)})
-watch(minimized,async value=>{if(!value){await nextTick();fitActive(true)}})
+watch(minimized,value=>{if(!value&&current.value)void focusSession(current.value)})
 watch(maximized,async()=>{await nextTick();fitActive()})
 onBeforeUnmount(()=>{closeAll();resize?.disconnect()})
 watch(dock,element=>{resize?.disconnect();if(element&&typeof ResizeObserver!=='undefined'){resize=new ResizeObserver(()=>fitActive());resize.observe(element)}})
@@ -192,7 +209,7 @@ defineExpose({open})
       <div class="term-actions"><button title="Свернуть" @click="minimized=true"><Minus :size="16"/></button><button title="Развернуть" @click="maximized=!maximized"><Maximize2 :size="15"/></button><button title="Закрыть все консоли" @click="closeAll"><X :size="17"/></button></div>
     </div>
     <nav class="term-tabs" v-show="!minimized"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @click="select(s.id)"><i :class="s.status"/>{{s.name}}</button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
-      <div class="terminal-hosts" v-show="!minimized"></div>
+      <div class="terminal-hosts" v-show="!minimized" @pointerdown="focusConsoleArea"></div>
       <footer class="term-footer" v-show="!minimized"><span>{{active?.status==='online'?'Соединение активно':active?.status==='stopped'?'Устройство остановлено':'Подключение / ожидание API'}}</span><button @click="active&&select(active.id)"><RefreshCcw :size="13"/> Обновить отображение</button></footer>
     <button v-if="minimized" class="restore-console" @click="minimized=false">{{sessions.length}} вкладок · Развернуть</button>
   </div>
