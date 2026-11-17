@@ -128,6 +128,14 @@ export const useNetlabStore = defineStore('netlab', () => {
   async function nodePower(id: string, operation: 'start' | 'stop') {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/nodes/${id}/${operation}`,{method:'POST'})); await refresh()
   }
+  // Full hardware edits require all devices in the lab to be stopped.
+  // PUT is intentionally distinct from live presentation-only PATCH.
+  async function configureQemuNode(id:string, payload:Device){
+    const lab=current()
+    if(lab.nodes.some(node=>node.status==='running'))throw Error('Сначала остановите всю лабораторию')
+    await action(()=>api<Device>(token.value,`labs/${lab.id}/nodes/${id}`,{method:'PUT',body:json(payload)}))
+    await refresh()
+  }
   async function updateNode(id: string, payload: Pick<Partial<Device>, "icon" | "portStyle" | "ports">) {
     await action(()=>api<Device>(token.value,`labs/${current().id}/nodes/${id}`,{method:"PATCH",body:json(payload)})); await refresh()
   }
@@ -153,5 +161,5 @@ export const useNetlabStore = defineStore('netlab', () => {
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,busy,failure,live,activeLab,selectedNode,
     authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
-    removeNode,updateNode,bulkNodes,connect,disconnect,updateCable,labPower}
+    removeNode,updateNode,configureQemuNode,bulkNodes,connect,disconnect,updateCable,labPower}
 })

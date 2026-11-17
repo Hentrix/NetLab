@@ -157,3 +157,8 @@
 .bulk-count{font-weight:600}
 .dialog-actions .bulk-delete{color:#c66c73}
 @media(max-width:720px){.bulk-dialog .dialog-actions{flex-wrap:wrap}}
+
+/* QEMU settings, deliberately separate from hot-editable presentation properties. */
+.hardware-dialog{width:min(540px,calc(100vw - 24px));max-height:85vh;overflow:auto}
+.hardware-dialog p{font-size:12px;line-height:1.5;margin:0;color:var(--muted)}
+.hardware-dialog .hardware-warning{color:#c8784e;font-weight:600}
