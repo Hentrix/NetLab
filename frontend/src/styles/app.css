@@ -166,3 +166,21 @@
 /* Multi-selection toolstrip: follows the existing topology toolbar design. */
 .canvas-selection-count{font-size:11px;color:var(--muted);white-space:nowrap;padding:0 5px}
 .canvas-selection-hint{position:absolute;left:12px;bottom:12px;z-index:5;pointer-events:none;font-size:10px;color:var(--muted);background:var(--surface);padding:5px 8px;border-radius:5px;border:1px solid var(--border);opacity:.86}
+
+/* Eight accessible resizing handles, matching the legacy editor's geometry. */
+.topology-annotation{position:relative}
+.annotation-handle{position:absolute;width:11px;height:11px;z-index:8;background:var(--surface);border:1.5px solid var(--accent);border-radius:3px;padding:0;opacity:0;pointer-events:none;touch-action:none}
+.vue-flow__node-annotation:hover .annotation-handle,
+.vue-flow__node-annotation.selected .annotation-handle{opacity:1;pointer-events:auto}
+.annotation-handle-n{top:-6px;left:calc(50% - 6px);cursor:n-resize}
+.annotation-handle-ne{top:-6px;right:-6px;cursor:ne-resize}
+.annotation-handle-e{top:calc(50% - 6px);right:-6px;cursor:e-resize}
+.annotation-handle-se{right:-6px;bottom:-6px;cursor:se-resize}
+.annotation-handle-s{left:calc(50% - 6px);bottom:-6px;cursor:s-resize}
+.annotation-handle-sw{left:-6px;bottom:-6px;cursor:sw-resize}
+.annotation-handle-w{left:-6px;top:calc(50% - 6px);cursor:w-resize}
+.annotation-handle-nw{left:-6px;top:-6px;cursor:nw-resize}
+.annotation-context-menu{position:absolute;z-index:35;width:180px;display:grid;gap:3px;padding:5px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 28px #0004}
+.annotation-context-menu button{background:transparent;border:0;border-radius:5px;padding:9px 11px;color:var(--ink);text-align:left;cursor:pointer;font:inherit;font-size:12px}
+.annotation-context-menu button:hover,.annotation-context-menu button:focus-visible{background:var(--surface-2)}
+.annotation-context-menu button.danger{color:#ba555b}
