@@ -10,7 +10,8 @@ const props = defineProps<{theme: 'light' | 'dark'}>()
 interface Session {
   id:string; lab:string; node:string; name:string; term:XTerm; fit:FitAddon;
   host:HTMLDivElement; abort:AbortController; cursor:number; decoder:TextDecoder;
-  status:'connecting'|'online'|'offline'|'stopped'; pending:Promise<void>; stopped:boolean; stopNoticeShown:boolean
+  status:'connecting'|'online'|'offline'|'stopped'; pending:Promise<void>; stopped:boolean; stopNoticeShown:boolean;
+  inputBuffer:string; flushTimer:ReturnType<typeof setTimeout>|null
 }
 const sessions=ref<Session[]>([])
 const current=ref<string|null>(null)
@@ -36,13 +37,25 @@ watch(()=>store.labs, labs=>{
 function showStoppedOnce(s:Session, message:string){
   s.stopped=true
   s.status='stopped'
+  if(s.flushTimer!==null){clearTimeout(s.flushTimer);s.flushTimer=null}
+  s.inputBuffer=''
   if(s.stopNoticeShown)return
   s.stopNoticeShown=true
   s.term.write(`\r\n[NetLab] ${message}\r\n`)
 }
 function authPath(s:Session){return `/api/labs/${encodeURIComponent(s.lab)}/nodes/${encodeURIComponent(s.node)}`}
 function send(s:Session, data:string){
-  if(s.stopped)return
+  if(s.stopped||s.abort.signal.aborted)return
+  s.inputBuffer+=data
+  // Ordinary typing is batched; Enter and Ctrl+C must be delivered at once.
+  if(/[\r\n\x03]/.test(data)||s.inputBuffer.length>=128)flushInput(s)
+  else if(s.flushTimer===null)s.flushTimer=setTimeout(()=>flushInput(s),20)
+}
+function flushInput(s:Session){
+  if(s.flushTimer!==null){clearTimeout(s.flushTimer);s.flushTimer=null}
+  const data=s.inputBuffer
+  s.inputBuffer=''
+  if(!data||s.stopped||s.abort.signal.aborted)return
   s.pending=s.pending.then(async()=>{
     if(s.stopped||s.abort.signal.aborted)return
     const response=await fetch(`${authPath(s)}/console`,{method:'POST',headers:{Authorization:`Bearer ${store.token}`,'Content-Type':'application/json'},body:JSON.stringify({text:data})})
@@ -109,7 +122,7 @@ async function open(device:Device){
   const term=new XTerm({cursorBlink:true,convertEol:false,scrollback:7000,theme:palette(dark.value),fontSize:13,fontFamily:'Consolas, "Cascadia Code", monospace'})
   const fit=new FitAddon();term.loadAddon(fit)
   const host=document.createElement('div');host.className='terminal-instance';host.style.display='none'
-  const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve(),stopped:false,stopNoticeShown:false}
+  const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve(),stopped:false,stopNoticeShown:false,inputBuffer:'',flushTimer:null}
   sessions.value.push(s);current.value=id;minimized.value=false
   await nextTick()
   const holder=dock.value?.querySelector('.terminal-hosts')
@@ -147,6 +160,8 @@ function close(id:string){
   const s=sessions.value.find(item=>item.id===id)
   if(!s)return
   s.abort.abort()
+  if(s.flushTimer!==null){clearTimeout(s.flushTimer);s.flushTimer=null}
+  s.inputBuffer=''
   s.term.dispose()
   s.host.remove()
   sessions.value=sessions.value.filter(item=>item.id!==id)
