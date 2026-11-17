@@ -22,6 +22,8 @@ type Server struct {
 	engine           *Engine
 	data, web, token string
 	sampler          metricSampler
+	ticketMu sync.Mutex
+	tickets map[string]graphicsTicket
 	publishing map[string]bool // guarded by store.mu
 }
 
@@ -47,7 +49,7 @@ func NewServer(data, web, token string) (*Server, error) {
 	if _, err := exec.LookPath("ovs-vsctl"); err == nil {
 		e.Recover(store.State.Labs)
 	}
-	return &Server{store: store, engine: e, data: data, web: web, token: token, publishing: make(map[string]bool)}, nil
+	return &Server{store: store, engine: e, data: data, web: web, token: token, publishing: make(map[string]bool), tickets:make(map[string]graphicsTicket)}, nil
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -58,6 +60,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		respond(w, 200, map[string]any{"status": "ok", "version": "0.8.2"})
 	})
+	mux.HandleFunc("/api/graphics/",s.serveGraphics)
 	mux.Handle("/api/", s.auth(http.HandlerFunc(s.api)))
 	mux.Handle("/", http.FileServer(http.Dir(s.web)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +181,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		}
 		s.imagesAPI(w, r, parts)
 		return
+	case "graphics-ticket":
+		if r.Method!=http.MethodPost {fail(w,405,"method not allowed");return}
+		s.issueGraphicsTicket(w,r);return
 	case "media":
 		s.mediaAPI(w,r,parts); return
 	case "catalog":
