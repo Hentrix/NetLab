@@ -113,3 +113,10 @@
 .port-editor-row label{min-width:0}
 .port-editor-row input,.port-editor-row select{width:100%;min-width:0}
 @media(max-width:600px){.port-editor-row{grid-template-columns:1fr 1fr}.port-editor-row strong{grid-column:1/-1}}
+
+.image-upload{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin:20px 0 24px}
+.image-upload label{display:flex;flex-direction:column;gap:7px;max-width:100%;font-size:12px;color:var(--muted)}
+.image-upload input{max-width:100%}
+.simple-page .list-row{gap:12px}
+.simple-page .list-row span{flex:1;min-width:0;overflow-wrap:anywhere}
+.simple-page .list-row button{margin-left:auto}

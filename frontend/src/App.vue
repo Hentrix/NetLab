@@ -16,6 +16,26 @@ const newLab=ref('');const createLabOpen=ref(false)
 const addOpen=ref(false)
 const templateID=ref('vpcs');const imageID=ref('');const deviceName=ref('');const nicCount=ref(4)
 const inFlight=ref(false)
+const uploadBusy=ref(false)
+const imageFile=ref<File|null>(null)
+async function uploadSelectedImage(){
+  if(!imageFile.value||uploadBusy.value)return
+  uploadBusy.value=true
+  try { await store.uploadImage(imageFile.value); imageFile.value=null }
+  finally { uploadBusy.value=false }
+}
+function selectImageFile(event:Event){
+  imageFile.value=(event.target as HTMLInputElement).files?.[0]||null
+}
+async function removeImage(id:string){
+  if(!confirm('Удалить образ? Он не должен использоваться устройствами.'))return
+  await store.deleteImage(id)
+}
+async function removeLab(){
+  const lab=store.activeLab
+  if(!lab||!confirm(`Удалить лабораторию «${lab.name}» со всеми узлами и overlay-дисками? Действие необратимо.`))return
+  await store.deleteLab(lab.id)
+}
 const search=ref('')
 const selectedTab=ref<'overview'|'ports'>('overview')
 const portEditorOpen=ref(false)
@@ -103,7 +123,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
         <form class="login-card" @submit.prevent="login"><Router :size="34"/><h1>Вход в NetLab</h1><p>Токен администратора хранится только в текущей вкладке браузера.</p><label>Токен<input v-model="tokenEntry" type="password" autocomplete="off" required/></label><button class="primary" type="submit">Войти</button></form>
       </template>
       <template v-else-if="page==='labs'">
-        <header class="page-title"><div><h1>{{store.activeLab?.name||'Лаборатории'}}</h1><p>Редактор сетевой топологии · Vue 3 + Vue Flow</p></div><div class="header-commands" v-if="store.activeLab"><button @click="powerLab('start')"><Play :size="16"/> Запустить всё</button><button @click="powerLab('stop')"><Square :size="16"/> Остановить всё</button><button @click="screenshot" title="Сохранить топологию в PNG"><Camera :size="16"/> Снимок</button><button title="Обновить" @click="store.refresh()"><RotateCcw :size="16"/></button></div></header>
+        <header class="page-title"><div><h1>{{store.activeLab?.name||'Лаборатории'}}</h1><p>Редактор сетевой топологии · Vue 3 + Vue Flow</p></div><div class="header-commands" v-if="store.activeLab"><button @click="powerLab('start')"><Play :size="16"/> Запустить всё</button><button @click="powerLab('stop')"><Square :size="16"/> Остановить всё</button><button @click="screenshot" title="Сохранить топологию в PNG"><Camera :size="16"/> Снимок</button><button title="Обновить" @click="store.refresh()"><RotateCcw :size="16"/></button><button class="danger" title="Удалить лабораторию" @click="removeLab"><Trash2 :size="16"/></button></div></header>
         <div v-if="store.activeLab" class="workspace">
           <aside class="device-list"><header>Устройства <button title="Добавить устройство" @click="openAdd"><Plus :size="17"/></button></header><input v-model="search" placeholder="Поиск устройств" aria-label="Поиск устройств"/><div class="list-scroll"><div v-for="group in deviceGroups" :key="group.id" class="device-category">
             <button class="device-category-title" @click="folded[group.id]=!folded[group.id]" :aria-expanded="!folded[group.id]"><ChevronDown :size="14" class="device-category-chevron" :class="{folded:folded[group.id]}"/>{{group.title}}<small>{{group.devices.length}}</small></button>
@@ -122,7 +142,10 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
         <div v-else class="empty-panel"><Router :size="38"/><h2>Создайте лабораторию</h2><p>Устройства, кабели и настройки будут сохранены на Debian-сервере.</p><button class="primary" @click="createLabOpen=true"><Plus :size="16"/> Новая лаборатория</button></div>
         <footer class="status-bar"><span><i :class="{ok:store.live}"/>{{liveStatus}}</span><span>{{store.activeLab?.nodes.length||0}} устройств</span><span>{{store.activeLab?.links.length||0}} соединений</span><span>NetLab · экспериментальный Vue-редактор</span></footer>
       </template>
-      <template v-else-if="page==='images'"><div class="simple-page"><h1>Библиотека образов</h1><p>Диски QEMU остаются на сервере и доступны обоим интерфейсам.</p><div v-for="image in store.images" :key="image.id" class="list-row"><HardDrive :size="18"/> {{image.name}} <small>{{image.format}}</small></div><p>Загрузка образов и расширенные операции пока доступны в <a href="/">основном интерфейсе</a>.</p></div></template>
+      <template v-else-if="page==='images'"><div class="simple-page"><h1>Библиотека образов</h1><p>QCOW2 и RAW загружаются на сервер. Для импорта используется проверка формата через qemu-img.</p>
+        <form class="image-upload" @submit.prevent="uploadSelectedImage"><label>Файл диска<input type="file" accept=".qcow2,.img,.raw,.qcow" @change="selectImageFile"/></label><button class="primary" type="submit" :disabled="uploadBusy||!imageFile">{{uploadBusy?'Загрузка…':'Загрузить образ'}}</button></form>
+        <div v-for="image in store.images" :key="image.id" class="list-row"><HardDrive :size="18"/><span>{{image.name}}</span><small>{{image.format}} · {{image.size?Math.round(image.size/1048576)+' МиБ':''}}</small><button class="danger" title="Удалить образ" @click="removeImage(image.id)"><Trash2 :size="15"/></button></div>
+        <p v-if="!store.images.length">Образы пока не загружены.</p></div></template>
       <template v-else><SystemOverview /></template>
       <div v-if="store.failure" role="alert" class="error-toast" @click="store.failure=''">{{store.failure}} <X :size="16"/></div>
     </main>

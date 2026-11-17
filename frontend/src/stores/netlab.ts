@@ -59,6 +59,21 @@ export const useNetlabStore = defineStore('netlab', () => {
     } catch (error) { failure.value = (error as Error).message }
     finally { checking.value = false }
   }
+  async function deleteLab(id: string) {
+    await action(()=>api<unknown>(token.value,`labs/${id}`,{method:'DELETE'}))
+    if(labID.value===id){labID.value=null;selectedID.value=null}
+    await refresh()
+  }
+  async function uploadImage(file: File) {
+    const body=new FormData();body.append('file',file)
+    const image=await action(()=>api<ImageRecord>(token.value,'images',{method:'POST',body}))
+    images.value=await api<ImageRecord[]>(token.value,'images')
+    return image
+  }
+  async function deleteImage(id: string) {
+    await action(()=>api<unknown>(token.value,`images/${id}`,{method:'DELETE'}))
+    images.value=await api<ImageRecord[]>(token.value,'images')
+  }
   async function createLab(name: string) {
     const item = await action(()=>api<Lab>(token.value,'labs',{method:'POST',body:json({name})}))
     await refresh(); labID.value = item.id
@@ -102,6 +117,6 @@ export const useNetlabStore = defineStore('netlab', () => {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,busy,failure,live,activeLab,selectedNode,
-    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,renameLab,addNode,moveNode,nodePower,renameNode,
+    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,renameLab,addNode,moveNode,nodePower,renameNode,
     removeNode,updateNode,connect,disconnect,updateCable,labPower}
 })
