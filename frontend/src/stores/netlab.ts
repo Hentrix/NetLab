@@ -320,7 +320,9 @@ export const useNetlabStore = defineStore('netlab', () => {
       failure.value=(e as Error).message
       throw e
     }finally{
+      const reported=failure.value
       await refresh()
+      if(reported)failure.value=reported
     }
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,selectedDeviceIDs,selectDeviceGroup,clickDeviceInSidebar,busy,failure,live,activeLab,selectedNode,
