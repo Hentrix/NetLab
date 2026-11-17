@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import RFB from '@novnc/novnc/core/rfb'
+import RFB from '@novnc/novnc/lib/rfb.js'
 import { api } from '@/api/client'
 import { useNetlabStore } from '@/stores/netlab'
 import { Monitor, RefreshCcw, X } from '@lucide/vue'
