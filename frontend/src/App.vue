@@ -357,7 +357,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
         <div v-if="store.activeLab" class="workspace">
           <aside class="device-list"><header>Устройства <button title="Добавить устройство" @click="openAdd"><Plus :size="17"/></button></header><input v-model="search" placeholder="Поиск устройств" aria-label="Поиск устройств"/><div class="list-scroll"><div v-for="group in deviceGroups" :key="group.id" class="device-category">
             <button class="device-category-title" @click="folded[group.id]=!folded[group.id]" :aria-expanded="!folded[group.id]"><ChevronDown :size="14" class="device-category-chevron" :class="{folded:folded[group.id]}"/>{{group.title}}<small>{{group.devices.length}}</small></button>
-            <template v-if="!folded[group.id]"><button v-for="node in group.devices" :key="node.id" class="device-entry" draggable="true" @dragstart="onDeviceDrag($event,node)" :class="{selected:store.selectedID===node.id}" @click="store.selectedID=node.id">
+            <template v-if="!folded[group.id]"><button v-for="node in group.devices" :key="node.id" class="device-entry" draggable="true" @dragstart="onDeviceDrag($event,node)" :class="{selected:store.selectedDeviceIDs.includes(node.id)}" :aria-pressed="store.selectedDeviceIDs.includes(node.id)" @click="store.clickDeviceInSidebar(node.id,$event.ctrlKey||$event.metaKey)">
               <img v-if="node.icon" :src="`/icons/${encodeURIComponent(node.icon)}`" alt=""/>
               <component :is="kindIcon(node.kind)==='pc'?Monitor:kindIcon(node.kind)==='shield'?Shield:kindIcon(node.kind)==='server'?Server:Router" v-else :size="22"/>
               <span><b>{{node.name}}</b><small>{{imageName(node)}}</small></span><i :class="node.status"/>
