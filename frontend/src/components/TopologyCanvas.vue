@@ -15,7 +15,7 @@ import { resizeAnnotation, clampAnnotationPosition, type ResizeSide, type Annota
 import { nextNodeSelection } from '@/topology/node-selection'
 
 const store = useNetlabStore()
-type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'|'log'
+type DeviceContextAction='console'|'graphics'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'|'log'
 const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'add-at',position:{x:number;y:number}):void; (e:'bulk', ids:string[]):void; (e:'device-action', payload:{id:string;action:DeviceContextAction}):void; (e:'delete-selection',ids:string[]):void; (e:'template-at',payload:{templateID:string;x:number;y:number}):void }>()
 const { fitView, zoomIn, zoomOut, setViewport, updateNodeInternals, viewport, screenToFlowCoordinate } = useVueFlow({ id:'netlab-topology' })
 const {setCenter}=useVueFlow({id:'netlab-topology'})
@@ -747,6 +747,7 @@ function closeEditor(){editingID.value=null}
       <button v-if="contextDevice.status!=='running'" type="button" role="menuitem" @click="runDeviceContextAction('start')"><Play :size="15"/> Запустить</button>
       <button v-else type="button" role="menuitem" @click="runDeviceContextAction('stop')"><Square :size="15"/> Остановить</button>
       <button type="button" role="menuitem" :disabled="contextDevice.status!=='running'" @click="runDeviceContextAction('console')"><MonitorPlay :size="15"/> Открыть консоль</button>
+      <button v-if="contextDevice.engine!=='vpcs'" type="button" role="menuitem" :disabled="contextDevice.status!=='running'" @click="runDeviceContextAction('graphics')"><MonitorPlay :size="15"/> Экран VNC</button>
       <div class="device-context-divider"></div>
       <button type="button" role="menuitem" @click="startCableFromContext"><CableIcon :size="15"/> Протянуть кабель</button>
       <button type="button" role="menuitem" @click="runDeviceContextAction('rename')"><Type :size="15"/> Переименовать</button>

@@ -11,6 +11,7 @@ import { exportTopology } from '@/topology/snapshot'
 import TerminalDock from '@/components/TerminalDock.vue'
 import ImageLibrary from '@/components/ImageLibrary.vue'
 import Workshop from '@/components/Workshop.vue'
+import GraphicsConsole from '@/components/GraphicsConsole.vue'
 const store=useNetlabStore()
 const tokenEntry=ref(store.token)
 const page=ref<'labs'|'images'|'workshop'|'system'>('labs')
@@ -357,15 +358,21 @@ async function removeCable(id:string){if(window.confirm('Отключить Ethe
 async function powerLab(op:'start'|'stop'){await store.labPower(op)}
 function kindIcon(kind?:string){return kind==='pc'?'pc':kind==='firewall'?'shield':kind==='server'?'server':'router'}
 function consoleOpen(device:Device){terminal.value?.open(device)}
+const graphicsDevice=ref<Device|null>(null)
+function openGraphics(device:Device){
+ if(device.engine==='vpcs'||device.status!=='running')return
+ graphicsDevice.value=device
+}
 function logout(){
   // Legacy logout always closes every terminal before dropping the API token.
   terminal.value?.closeAll()
+  graphicsDevice.value=null
   closeSidebarMenu()
   deviceLogOpen.value=false
   store.logout()
   page.value='labs'
 }
-type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'|'log'
+type DeviceContextAction='console'|'graphics'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'|'log'
 async function deviceContextAction(payload:{id:string;action:DeviceContextAction}){
   // Resolve the current node by ID: polling can replace store objects while a menu is open.
   const device=store.activeLab?.nodes.find(node=>node.id===payload.id)
@@ -373,6 +380,7 @@ async function deviceContextAction(payload:{id:string;action:DeviceContextAction
   try{
     switch(payload.action){
       case 'console': consoleOpen(device);break
+      case 'graphics': openGraphics(device);break
       case 'start': await powerNode(device,'start');break
       case 'stop': await powerNode(device,'stop');break
       case 'rename': await rename(device);break
@@ -460,7 +468,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
                 <label>Интерфейсы</label><strong>{{store.selectedNode.engine==='vpcs'?1:(store.selectedNode.nicCount||16)}}</strong>
               </div>
               <p v-if="store.selectedNode.error" class="inspector-node-error">{{store.selectedNode.error}}</p>
-              <div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button :disabled="store.selectedNode.status!=='running'" @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
+              <div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button :disabled="store.selectedNode.status!=='running'" @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button v-if="store.selectedNode.engine!=='vpcs'" :disabled="store.selectedNode.status!=='running'" @click="openGraphics(store.selectedNode)"><Monitor :size="15"/> Экран (VNC)</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
             <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{portLabel(store.activeLab?.nodes.find(n=>n.id===cable.a),cable.aPort)}} ↔ {{portLabel(store.activeLab?.nodes.find(n=>n.id===cable.b),cable.bPort)}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
           </template><div v-else-if="!inspectorCollapsed" class="inspector-empty">Выберите устройство<br/>на топологии</div></aside>
         </div>
@@ -483,6 +491,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
       <template v-else>
         <div class="device-context-heading">{{sidebarMenuDevice.name}} <small>{{sidebarMenuDevice.status==='running'?'Запущен':'Остановлен'}}</small></div>
         <button type="button" role="menuitem" :disabled="sidebarMenuDevice.status!=='running'" @click="sidebarMenuAction('console')"><TerminalSquare :size="15"/> Открыть консоль</button>
+        <button v-if="sidebarMenuDevice.engine!=='vpcs'" type="button" role="menuitem" :disabled="sidebarMenuDevice.status!=='running'" @click="sidebarMenuAction('graphics')"><Monitor :size="15"/> Открыть экран VNC</button>
         <button v-if="sidebarMenuDevice.status!=='running'" type="button" role="menuitem" @click="sidebarMenuAction('start')"><Play :size="15"/> Запустить</button>
         <button v-else type="button" role="menuitem" @click="sidebarMenuAction('stop')"><Square :size="15"/> Остановить</button>
         <div class="device-context-divider"/>
@@ -496,6 +505,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
       </template>
     </div>
     <TerminalDock ref="terminal" :theme="theme" />
+    <GraphicsConsole v-if="graphicsDevice" :key="graphicsDevice.id" :device="graphicsDevice" @close="graphicsDevice=null"/>
     <div v-if="deviceLogOpen" class="dialog-overlay" @click.self="deviceLogOpen=false">
       <div class="dialog-card device-log-dialog" role="dialog" :aria-label="'Журнал '+deviceLogName">
         <h2>Журнал · {{deviceLogName}}</h2>
