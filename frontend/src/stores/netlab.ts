@@ -85,6 +85,10 @@ export const useNetlabStore = defineStore('netlab', () => {
     const lab = current()
     await action(()=>api<Device>(token.value,`labs/${lab.id}/nodes`,{method:'POST',body:json(payload)})); await refresh()
   }
+  async function addNodesBatch(template: Partial<Device>, count: number) {
+    await action(()=>api<unknown>(token.value,`labs/${current().id}/nodes/batch`,{method:'POST',body:json({template,count})}))
+    await refresh()
+  }
   async function moveNode(id: string, x: number, y: number) {
     const lab = current()
     await action(()=>api<Device>(token.value,`labs/${lab.id}/nodes/${id}`,{method:'PATCH',body:json({x: Math.round(x), y: Math.round(y)})}))
@@ -117,6 +121,6 @@ export const useNetlabStore = defineStore('netlab', () => {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,busy,failure,live,activeLab,selectedNode,
-    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,renameLab,addNode,moveNode,nodePower,renameNode,
+    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,renameLab,addNode,addNodesBatch,moveNode,nodePower,renameNode,
     removeNode,updateNode,connect,disconnect,updateCable,labPower}
 })

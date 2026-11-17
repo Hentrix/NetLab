@@ -14,6 +14,7 @@ const page=ref<'labs'|'images'|'system'>('labs')
 const theme=ref<'light' | 'dark'>(localStorage.getItem('netlab-theme')==='dark'?'dark':'light')
 const newLab=ref('');const createLabOpen=ref(false)
 const addOpen=ref(false)
+const batchCount=ref(1)
 const templateID=ref('vpcs');const imageID=ref('');const deviceName=ref('');const nicCount=ref(4)
 const inFlight=ref(false)
 const uploadBusy=ref(false)
@@ -83,16 +84,18 @@ let interval:ReturnType<typeof setInterval>|null=null
 function toggleTheme(){theme.value=dark.value?'light':'dark';document.documentElement.dataset.theme=theme.value;localStorage.setItem('netlab-theme',theme.value)}
 async function login(){store.authenticate(tokenEntry.value);await store.bootstrap()}
 async function submitLab(){if(!newLab.value.trim())return;await store.createLab(newLab.value);createLabOpen.value=false;newLab.value=''}
-function openAdd(){templateID.value=store.templates[0]?.id||'vpcs';imageID.value=store.images[0]?.id||'';deviceName.value=selectedTemplate.value?.name||'Устройство';nicCount.value=selectedTemplate.value?.nicCount||4;addOpen.value=true}
+function openAdd(){batchCount.value=1;templateID.value=store.templates[0]?.id||'vpcs';imageID.value=store.images[0]?.id||'';deviceName.value=selectedTemplate.value?.name||'Устройство';nicCount.value=selectedTemplate.value?.nicCount||4;addOpen.value=true}
 function changeTemplate(){deviceName.value=selectedTemplate.value?.name||'Устройство';nicCount.value=selectedTemplate.value?.engine==='vpcs'?1:selectedTemplate.value?.nicCount||4}
 async function addDevice(){
   const t:Template|undefined=selectedTemplate.value;if(!t||!store.activeLab)return
   inFlight.value=true
   try{
     const idx=store.activeLab.nodes.length
-    await store.addNode({name:deviceName.value.trim()||t.name,kind:t.kind||'router',engine:t.engine||'qemu',imageId:t.engine==='vpcs'?'':imageID.value,
+    const payload={name:deviceName.value.trim()||t.name,kind:t.kind||'router',engine:t.engine||'qemu',imageId:t.engine==='vpcs'?'':imageID.value,
       nicCount:t.engine==='vpcs'?1:nicCount.value,portStyle:t.portStyle||'eth',ram:t.ram||256,cpus:t.cpus||1,
-      nicModel:t.nicModel||'e1000',diskBus:t.diskBus||'ide',x:100+(idx%5)*185,y:130+Math.floor(idx/5)*150})
+      nicModel:t.nicModel||'e1000',diskBus:t.diskBus||'ide',x:100+(idx%5)*185,y:130+Math.floor(idx/5)*150}
+    if(batchCount.value>1)await store.addNodesBatch(payload,batchCount.value)
+    else await store.addNode(payload)
     addOpen.value=false
   }finally{inFlight.value=false}
 }
@@ -199,6 +202,6 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
         <div class="dialog-actions"><button type="button" @click="portEditorOpen=false">Отмена</button><button class="primary" :disabled="portSaving">Сохранить</button></div>
       </form>
     </div>
-    <div v-if="addOpen" class="dialog-overlay" @click.self="addOpen=false"><form class="dialog-card" @submit.prevent="addDevice"><h2>Добавить устройство</h2><label>Профиль<select v-model="templateID" @change="changeTemplate"><option v-for="t in store.templates" :key="t.id" :value="t.id">{{t.name}}</option></select></label><label>Название<input v-model="deviceName" required /></label><template v-if="selectedTemplate?.engine!=='vpcs'"><label>Образ<select v-model="imageID" required><option v-for="i in store.images" :key="i.id" :value="i.id">{{i.name}}</option></select></label><label>Число Ethernet-портов<input v-model.number="nicCount" type="number" min="1" max="32"/></label></template><p v-else>VPCS не требует образа диска. Доступен один порт eth0.</p><div class="dialog-actions"><button type="button" @click="addOpen=false">Отмена</button><button class="primary" :disabled="inFlight||(selectedTemplate?.engine!=='vpcs'&&!imageID)">Добавить</button></div></form></div>
+    <div v-if="addOpen" class="dialog-overlay" @click.self="addOpen=false"><form class="dialog-card" @submit.prevent="addDevice"><h2>Добавить устройство</h2><label>Профиль<select v-model="templateID" @change="changeTemplate"><option v-for="t in store.templates" :key="t.id" :value="t.id">{{t.name}}</option></select></label><label>Название<input v-model="deviceName" required /></label><label>Количество<input v-model.number="batchCount" type="number" min="1" max="32" required /></label><template v-if="selectedTemplate?.engine!=='vpcs'"><label>Образ<select v-model="imageID" required><option v-for="i in store.images" :key="i.id" :value="i.id">{{i.name}}</option></select></label><label>Число Ethernet-портов<input v-model.number="nicCount" type="number" min="1" max="32"/></label></template><p v-else>VPCS не требует образа диска. Доступен один порт eth0.</p><div class="dialog-actions"><button type="button" @click="addOpen=false">Отмена</button><button class="primary" :disabled="inFlight||(selectedTemplate?.engine!=='vpcs'&&!imageID)">Добавить</button></div></form></div>
   </div>
 </template>
