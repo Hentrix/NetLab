@@ -20,7 +20,7 @@ test('revision API updates the selected lab and refreshes images',()=>{
  assert.match(store,/workshop\/revise/)
  assert.match(store,/labID\.value=result\.lab\.id/)
  assert.match(store,/selectDeviceGroup\(\[result\.node\.id\],result\.node\.id\)/)
- assert.match(store,/createBlankImage,createWorkshopRevision,configureNodeMedia,publishWorkshop/)
+ assert.match(store,/createBlankImage,prepareWorkshopFromISO,createWorkshopRevision,configureNodeMedia,publishWorkshop/)
 })
 
 test('workshop controls ISO eject and boot preference only when VM stopped',()=>{
