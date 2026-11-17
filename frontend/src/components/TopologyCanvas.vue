@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiSelect from '@/components/UiSelect.vue'
 import { computed, nextTick, ref, watch, onBeforeUnmount, onMounted } from 'vue'
-import { VueFlow, useVueFlow, type Connection } from '@vue-flow/core'
+import { VueFlow, useVueFlow, type Connection, type NodeMouseEvent } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { MousePointer2, Hand, Scan, Cable as CableIcon, Maximize, Plus, Minus, MonitorPlay, Trash2, X, StickyNote, Type, Play, Square } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
@@ -605,7 +605,7 @@ async function dragStopped(event:{node:{id:string;position:{x:number;y:number}};
     await store.moveTopologyItems(dragged.map(node=>({id:node.id,x:node.position.x,y:node.position.y})))
   }finally{movingGroup.value=false}
 }
-function picked(event:{node:{id:string};event:MouseEvent}) {
+function picked(event:NodeMouseEvent) {
   if(panMode.value)return
   const id=event.node.id
   if(cableMode.value) {
