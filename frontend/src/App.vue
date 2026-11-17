@@ -262,7 +262,29 @@ async function addDevice(){
 }
 async function powerNode(device:Device,op:'start'|'stop'){await store.nodePower(device.id,op)}
 async function deleteNode(device:Device){if(!window.confirm(`Удалить ${device.name} и его соединения?`))return;await store.removeNode(device.id)}
-async function rename(device:Device){const name=window.prompt('Название устройства',device.name);if(name?.trim()&&name!==device.name)await store.renameNode(device.id,name.trim())}
+const renameOpen=ref(false)
+const renameDeviceID=ref('')
+const renameName=ref('')
+const renameSaving=ref(false)
+function rename(device:Device){
+  renameDeviceID.value=device.id
+  renameName.value=device.name
+  renameOpen.value=true
+}
+async function saveRename(){
+  const value=renameName.value.trim()
+  if(renameSaving.value||!renameDeviceID.value||!value)return
+  const device=store.activeLab?.nodes.find(node=>node.id===renameDeviceID.value)
+  if(!device){renameOpen.value=false;return}
+  if(value===device.name){renameOpen.value=false;return}
+  renameSaving.value=true
+  try{
+    await store.renameNode(device.id,value)
+    renameOpen.value=false
+  }catch(error){store.failure=(error as Error).message}
+  finally{renameSaving.value=false}
+}
+watch(()=>store.labID,()=>{renameOpen.value=false})
 function editPorts(device:Device){
   portEditorDevice.value=device.id
   portStyleDraft.value=device.portStyle||'eth'
@@ -396,6 +418,17 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
       </div>
     </div>
     <div v-if="createLabOpen" class="dialog-overlay" @click.self="createLabOpen=false"><form class="dialog-card" @submit.prevent="submitLab"><h2>Новая лаборатория</h2><label>Название<input v-model="newLab" required maxlength="80" autofocus/></label><div class="dialog-actions"><button type="button" @click="createLabOpen=false">Отмена</button><button class="primary">Создать</button></div></form></div>
+    <div v-if="renameOpen" class="dialog-overlay" @click.self="!renameSaving&&(renameOpen=false)">
+      <form class="dialog-card rename-device-dialog" role="dialog" aria-label="Переименовать устройство" @submit.prevent="saveRename">
+        <h2>Переименовать устройство</h2>
+        <label for="rename-device-name">Название устройства</label>
+        <input id="rename-device-name" v-model="renameName" autofocus required maxlength="80" autocomplete="off" :disabled="renameSaving"/>
+        <div class="dialog-actions">
+          <button type="button" :disabled="renameSaving" @click="renameOpen=false">Отмена</button>
+          <button type="submit" class="primary" :disabled="renameSaving||!renameName.trim()">Сохранить</button>
+        </div>
+      </form>
+    </div>
     <div v-if="iconPickerOpen" class="dialog-overlay" @click.self="iconPickerOpen=false">
       <div class="dialog-card icon-picker-dialog" role="dialog" aria-label="Каталог иконок">
         <h2>Выбрать иконку устройства</h2>
