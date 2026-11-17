@@ -34,3 +34,18 @@ test('workshop controls ISO eject and boot preference only when VM stopped',()=>
  assert.match(store,/async function configureNodeMedia\(labId:string,nodeId:string,installISOId:string,bootOrder:'disk'\|'cdrom'\)/)
  assert.match(store,/nodes\/\$\{nodeId\}\/media/)
 })
+
+test('ISO preparation uses one backend request instead of orphanable chained calls',()=>{
+ assert.match(workshop,/async function createPreparation\(\)/)
+ assert.match(workshop,/store\.prepareWorkshopFromISO\(/)
+ assert.doesNotMatch(workshop,/store\.createBlankImage\(/)
+ assert.doesNotMatch(workshop,/store\.createLab\(/)
+ assert.doesNotMatch(workshop,/store\.addNode\(/)
+ assert.match(store,/async function prepareWorkshopFromISO\(/)
+ assert.match(store,/workshop\/prepare/)
+ assert.match(store,/selectDeviceGroup\(\[result\.node\.id\],result\.node\.id\)/)
+})
+test('published versions sort numerically within their families',()=>{
+ assert.match(workshop,/group\.images\.sort\(/)
+ assert.match(workshop,/numeric:true/)
+})
