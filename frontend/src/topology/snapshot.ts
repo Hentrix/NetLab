@@ -1,4 +1,4 @@
-import type { Lab, Device } from '../types'
+import type { Lab, Device, Annotation } from '../types'
 import { layoutCables, portLabelPoint, DEVICE_WIDTH, DEVICE_HEIGHT } from './cable-layout'
 import { portLabel } from '../api/client'
 
@@ -6,9 +6,12 @@ import { portLabel } from '../api/client'
 export async function exportTopology(lab: Lab, dark = false): Promise<void> {
   const margin=90
   const nodes=lab.nodes||[]
-  if(!nodes.length) throw Error('На топологии нет устройств')
-  const xmin=Math.min(...nodes.map(n=>n.x)),ymin=Math.min(...nodes.map(n=>n.y))
-  const xmax=Math.max(...nodes.map(n=>n.x+DEVICE_WIDTH)),ymax=Math.max(...nodes.map(n=>n.y+DEVICE_HEIGHT))
+  const annotations=lab.annotations||[]
+  if(!nodes.length&&!annotations.length) throw Error('На топологии нет устройств или аннотаций')
+  const xmin=Math.min(...nodes.map(n=>n.x),...annotations.map(a=>a.x))
+  const ymin=Math.min(...nodes.map(n=>n.y),...annotations.map(a=>a.y))
+  const xmax=Math.max(...nodes.map(n=>n.x+DEVICE_WIDTH),...annotations.map(a=>a.x+a.width))
+  const ymax=Math.max(...nodes.map(n=>n.y+DEVICE_HEIGHT),...annotations.map(a=>a.y+a.height))
   const width=Math.ceil(xmax-xmin+margin*2),height=Math.ceil(ymax-ymin+margin*2)
   const scale=2
   const canvas=document.createElement('canvas');canvas.width=width*scale;canvas.height=height*scale
@@ -50,7 +53,46 @@ export async function exportTopology(lab: Lab, dark = false): Promise<void> {
     ctx.fillStyle=n.status==='running'?'#43b789':'#a1afbd';ctx.beginPath();ctx.arc(n.x+12,n.y+87,3,0,Math.PI*2);ctx.fill()
     ctx.font='600 11px Segoe UI,Arial,sans-serif';ctx.fillStyle=dark?'#e4edf5':'#243746';ctx.textAlign='center';ctx.fillText(n.name,n.x+DEVICE_WIDTH/2,n.y+90)
   }
+  for(const annotation of annotations) drawAnnotation(ctx,annotation)
   const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,'image/png'))
   if(!blob)throw Error('Не удалось сохранить PNG')
   const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`netlab-${lab.name.replace(/[^a-zA-Z0-9_-]/g,'_')}.png`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500)
+}
+
+/** Match the annotation's world coordinates, size and basic styles in PNG export. */
+function drawAnnotation(ctx:CanvasRenderingContext2D,a:Annotation){
+  ctx.save()
+  const background=a.background||(a.kind==='note'?'#fff4c4':'transparent')
+  if(background!=='transparent'){ctx.fillStyle=background;ctx.fillRect(a.x,a.y,a.width,a.height)}
+  const borderWidth=a.borderWidth??(a.kind==='note'?1:0)
+  if(borderWidth>0){ctx.strokeStyle=a.borderColor||'#d2b869';ctx.lineWidth=borderWidth;ctx.strokeRect(a.x,a.y,a.width,a.height)}
+  const fontSize=a.fontSize||14
+  ctx.font=`${a.italic?'italic ':''}${a.bold?'700 ':''}${fontSize}px Segoe UI,Arial,sans-serif`
+  ctx.fillStyle=a.color||'#253746'
+  ctx.textBaseline='top'
+  ctx.textAlign=a.align||'left'
+  const padding=10
+  const maxWidth=Math.max(1,a.width-padding*2)
+  const x=a.align==='right'?a.x+a.width-padding:a.align==='center'?a.x+a.width/2:a.x+padding
+  const lineHeight=fontSize*1.35
+  const maxLines=Math.max(1,Math.floor((a.height-padding*2)/lineHeight))
+  const lines:string[]=[]
+  for(const paragraph of (a.text||'').split('\n')){
+    let line=''
+    for(const word of paragraph.split(/\s+/).filter(Boolean)){
+      const proposal=line?`${line} ${word}`:word
+      if(line&&ctx.measureText(proposal).width>maxWidth){lines.push(line);line=word}else line=proposal
+    }
+    lines.push(line)
+  }
+  for(let i=0;i<Math.min(maxLines,lines.length);i++){
+    const text=lines[i]
+    ctx.fillText(text,x,a.y+padding+i*lineHeight,maxWidth)
+    if(a.underline){
+      const w=Math.min(maxWidth,ctx.measureText(text).width)
+      const offset=a.align==='right'?-w:a.align==='center'?-w/2:0
+      ctx.fillRect(x+offset,a.y+padding+(i+1)*lineHeight-3,w,1)
+    }
+  }
+  ctx.restore()
 }

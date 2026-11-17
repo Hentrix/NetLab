@@ -132,3 +132,13 @@
 /* Keep terminal DOM mounted while minimized. Each PTY has its own xterm and input focus. */
 .term-dock.is-minimized .term-tabs,.term-dock.is-minimized .terminal-hosts,.term-dock.is-minimized .term-footer{display:none!important}
 .term-tab.active button:first-child{font-weight:650}
+
+/* Topology annotations use the same geometry as the legacy editor. */
+.topology-annotation{box-sizing:border-box;white-space:pre-wrap;overflow:hidden;overflow-wrap:anywhere;padding:8px 10px;border-radius:5px;line-height:1.35;cursor:grab;user-select:none}
+.topology-annotation.is-note{box-shadow:0 2px 9px #0000001a}
+.vue-flow__node-annotation{border:0!important;box-shadow:none!important;cursor:grab}
+.vue-flow__node-annotation.selected .topology-annotation{outline:2px solid var(--accent);outline-offset:2px}
+.annotation-dialog{width:min(510px,calc(100vw - 32px));max-height:85vh;overflow-y:auto}
+.annotation-dialog textarea{width:100%;resize:vertical;min-height:72px;padding:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--ink);font:inherit}
+.annotation-format{display:flex;flex-wrap:wrap;gap:12px}.annotation-format label{display:flex;align-items:center;gap:6px}
+.annotation-format input{width:auto;min-width:0}

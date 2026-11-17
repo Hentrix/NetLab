@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api, json } from '@/api/client'
-import type { Cable, Device, ImageRecord, Lab, Template, HostSystem, HostMetrics } from '@/types'
+import type { Cable, Device, Annotation, ImageRecord, Lab, Template, HostSystem, HostMetrics } from '@/types'
 
 export const useNetlabStore = defineStore('netlab', () => {
   const token = ref(sessionStorage.getItem('netlabToken') || '')
@@ -78,6 +78,18 @@ export const useNetlabStore = defineStore('netlab', () => {
     const item = await action(()=>api<Lab>(token.value,'labs',{method:'POST',body:json({name})}))
     await refresh(); labID.value = item.id
   }
+  async function createAnnotation(payload: Omit<Annotation, 'id'>) {
+    await action(()=>api<Annotation>(token.value,`labs/${current().id}/annotations`,{method:'POST',body:json(payload)}))
+    await refresh()
+  }
+  async function updateAnnotation(id: string, payload: Omit<Annotation, 'id'>) {
+    await action(()=>api<Annotation>(token.value,`labs/${current().id}/annotations/${id}`,{method:'PATCH',body:json(payload)}))
+    await refresh()
+  }
+  async function removeAnnotation(id: string) {
+    await action(()=>api<unknown>(token.value,`labs/${current().id}/annotations/${id}`,{method:'DELETE'}))
+    await refresh()
+  }
   async function renameLab(name: string) {
     await action(()=>api<Lab>(token.value,`labs/${current().id}`,{method:'PATCH',body:json({name})})); await refresh()
   }
@@ -121,6 +133,6 @@ export const useNetlabStore = defineStore('netlab', () => {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,busy,failure,live,activeLab,selectedNode,
-    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,renameLab,addNode,addNodesBatch,moveNode,nodePower,renameNode,
+    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
     removeNode,updateNode,connect,disconnect,updateCable,labPower}
 })
