@@ -112,6 +112,9 @@ func (s *Server) workshopAPI(w http.ResponseWriter,r *http.Request,p []string){
  if !decode(w,r,&req){return}
  if !validID(req.LabID)||!validID(req.NodeID){fail(w,400,"неверный ID");return}
  if err:=validateImageMetadata(req.Name,req.Category,req.Family,req.Version);err!=nil{fail(w,400,err.Error());return}
+ if strings.TrimSpace(req.Family)=="" || strings.TrimSpace(req.Version)=="" {
+  fail(w,400,"для публикации укажите семейство и версию");return
+ }
  if _,err:=exec.LookPath("qemu-img");err!=nil{fail(w,503,"требуется qemu-img");return}
  // Keep the state lock while converting. This deliberately serializes QEMU
  // start/stop with snapshot publishing, avoiding corruption from live writes.
