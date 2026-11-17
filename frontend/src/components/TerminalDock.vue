@@ -189,6 +189,9 @@ function select(id:string){
   current.value=id
   minimized.value=false
   showSession(id)
+  // The browser can deliver the next keystroke before the next animation
+  // frame. Focus xterm synchronously on tab click; fitting remains deferred.
+  if(session.host.isConnected&&!minimized.value)focusTerminal(session)
   void focusSession(id)
 }
 function focusConsoleArea(){
