@@ -137,7 +137,7 @@ async function open(device:Device){
   void stream(s)
 }
 let focusRevision=0
-function fitActive(){
+function fitActive(shouldFocus=false){
   const s=active.value
   if(!s||minimized.value)return
   const revision=++focusRevision
@@ -146,7 +146,7 @@ function fitActive(){
     if(!s.host.isConnected||s.host.clientWidth<=20||s.host.clientHeight<=20)return
     s.fit.fit()
     s.term.refresh(0,s.term.rows-1)
-    s.term.focus()
+    if(shouldFocus)s.term.focus()
   })
 }
 function select(id:string){
@@ -154,7 +154,7 @@ function select(id:string){
   current.value=id
   minimized.value=false
   for(const s of sessions.value)s.host.style.display=s.id===id?'block':'none'
-  void nextTick(fitActive)
+  void nextTick(()=>fitActive(true))
 }
 function close(id:string){
   const s=sessions.value.find(item=>item.id===id)
@@ -179,10 +179,10 @@ function moveStart(event:PointerEvent){if(event.button!==0||maximized.value||(ev
 function move(event:PointerEvent){if(!dragging)return;left.value=Math.min(window.innerWidth-110,Math.max(0,dragging.left+event.clientX-dragging.x));top.value=Math.min(window.innerHeight-50,Math.max(0,dragging.top+event.clientY-dragging.y))}
 function moveEnd(){dragging=null}
 watch(dark,()=>{for(const s of sessions.value)s.term.options.theme=palette(dark.value)})
-watch(minimized,async value=>{if(!value){await nextTick();fitActive()}})
+watch(minimized,async value=>{if(!value){await nextTick();fitActive(true)}})
 watch(maximized,async()=>{await nextTick();fitActive()})
 onBeforeUnmount(()=>{closeAll();resize?.disconnect()})
-watch(dock,element=>{resize?.disconnect();if(element&&typeof ResizeObserver!=='undefined'){resize=new ResizeObserver(fitActive);resize.observe(element)}})
+watch(dock,element=>{resize?.disconnect();if(element&&typeof ResizeObserver!=='undefined'){resize=new ResizeObserver(()=>fitActive());resize.observe(element)}})
 defineExpose({open})
 </script>
 <template>
