@@ -87,7 +87,7 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 		cleanup()
 		return err
 	}
-	logFile, err := os.OpenFile(filepath.Join(runtime, "vpcs.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
+	logFile, err := os.OpenFile(filepath.Join(runtime, "vpcs.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0640)
 	if err != nil {
 		_ = slave.Close()
 		_ = master.Close()
@@ -154,9 +154,7 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 			log.Printf("VPCS PTY reader: delayed shutdown lab=%s node=%s", l.ID, n.ID)
 		}
 		e.mu.Lock()
-		if waitErr != nil {
-			ins.err = fmt.Sprintf("VPCS завершился: %v. Журнал: %s", waitErr, tailLog(filepath.Join(runtime, "vpcs.log")))
-		}
+		ins.err = vpcsExitDiagnostic(waitErr, ins.stopRequested, filepath.Join(runtime, "vpcs.log"))
 		ins.status = "stopped"
 		for _, ln := range ins.links {
 			delete(e.linkActive, ln.ID)
@@ -185,4 +183,11 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 		}
 	}
 	return nil
+}
+
+func vpcsExitDiagnostic(waitErr error, requested bool, logPath string) string {
+	if requested || waitErr == nil {
+		return ""
+	}
+	return fmt.Sprintf("VPCS неожиданно завершился: %v. Журнал текущего запуска: %s", waitErr, tailLog(logPath))
 }
