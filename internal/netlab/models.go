@@ -122,6 +122,13 @@ type Image struct {
 	Version   string    `json:"version,omitempty"`
 	Published bool      `json:"published,omitempty"`
 	Draft     bool      `json:"draft,omitempty"`
+	RAM       int       `json:"ram,omitempty"`
+	CPUs      int       `json:"cpus,omitempty"`
+	NICModel  string    `json:"nicModel,omitempty"`
+	NICCount  int       `json:"nicCount,omitempty"`
+	DiskBus   string    `json:"diskBus,omitempty"`
+	PortStyle string    `json:"portStyle,omitempty"`
+	Icon      string    `json:"icon,omitempty"`
 	Size      int64     `json:"size"`
 	CreatedAt time.Time `json:"createdAt"`
 }
