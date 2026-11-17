@@ -248,3 +248,76 @@ func TestWorkshopRevisionRestoresStateOnSaveFailure(t *testing.T) {
  if err!=nil{t.Fatal(err)}
  if len(images)!=1||images[0].Name()!=base.ID+".qcow2"{t.Fatalf("orphaned disk after rollback: %+v",images)}
 }
+
+
+func TestPreparationMediaSwitchAndISOEject(t *testing.T) {
+ s:=newTestServer(t)
+ disk:=Image{ID:newID(),Name:"System",Format:"qcow2",Kind:"disk",Draft:true}
+ iso:=Image{ID:newID(),Name:"Installer",Format:"iso",Kind:"iso"}
+ lab:=Lab{ID:newID(),Name:"Preparation",Nodes:[]Node{{
+  ID:newID(),Name:"Install VM",Engine:"qemu",ImageID:disk.ID,InstallISOID:iso.ID,
+  RAM:2048,CPUs:2,NICModel:"e1000",NICCount:2,DiskBus:"ide",
+ }},Links:[]Link{}}
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,disk,iso)
+ s.store.State.Labs=append(s.store.State.Labs,lab)
+ if err:=s.store.save();err!=nil{t.Fatal(err)}
+ s.store.mu.Unlock()
+ url:="/api/labs/"+lab.ID+"/nodes/"+lab.Nodes[0].ID+"/media"
+ code,body:=httpCall(t,s,"PATCH",url,[]byte(`{"installISOId":"`+iso.ID+`","bootOrder":"disk"}`),true)
+ assertStatus(t,code,200,body)
+ var changed Node
+ if err:=json.Unmarshal(body,&changed);err!=nil{t.Fatal(err)}
+ if changed.BootOrder!="disk"||changed.InstallISOID!=iso.ID{t.Fatalf("disk boot failed: %+v",changed)}
+ code,body=httpCall(t,s,"PATCH",url,[]byte(`{"installISOId":"","bootOrder":"disk"}`),true)
+ assertStatus(t,code,200,body)
+ s.store.mu.Lock()
+ node:=findNode(&s.store.State.Labs[0],lab.Nodes[0].ID)
+ if node==nil||node.InstallISOID!=""||node.ImageID!=disk.ID||node.BootOrder!="disk" {
+  t.Fatalf("eject damaged disk or media settings: %+v",node)
+ }
+ s.store.mu.Unlock()
+ code,body=httpCall(t,s,"PATCH",url,[]byte(`{"installISOId":"`+iso.ID+`","bootOrder":"cdrom"}`),true)
+ assertStatus(t,code,200,body)
+ code,body=httpCall(t,s,"PATCH",url,[]byte(`{"installISOId":"bad","bootOrder":"cdrom"}`),true)
+ assertStatus(t,code,400,body)
+ code,body=httpCall(t,s,"PATCH",url,[]byte(`{"installISOId":"","bootOrder":"network"}`),true)
+ assertStatus(t,code,400,body)
+ code,body=httpCall(t,s,"PATCH",url,[]byte(`{"installISOId":"","bootOrder":"disk","imageId":"malicious"}`),true)
+ assertStatus(t,code,200,body)
+ // Only media fields are applied: a forged imageId must not replace the disk.
+ s.store.mu.Lock()
+ if findNode(&s.store.State.Labs[0],lab.Nodes[0].ID).ImageID!=disk.ID{t.Fatal("media API changed system disk")}
+ s.store.mu.Unlock()
+ s.engine.mu.Lock()
+ s.engine.instances[key(lab.ID,lab.Nodes[0].ID)]=&Instance{status:"running"}
+ s.engine.mu.Unlock()
+ code,body=httpCall(t,s,"PATCH",url,[]byte(`{"installISOId":"`+iso.ID+`","bootOrder":"cdrom"}`),true)
+ assertStatus(t,code,409,body)
+}
+
+func TestPreparationMediaSaveRollback(t *testing.T) {
+ s:=newTestServer(t)
+ disk:=Image{ID:newID(),Name:"Disk",Format:"qcow2"}
+ iso:=Image{ID:newID(),Name:"ISO",Format:"iso",Kind:"iso"}
+ lab:=Lab{ID:newID(),Name:"Lab",Nodes:[]Node{{
+  ID:newID(),Name:"VM",Engine:"qemu",ImageID:disk.ID,InstallISOID:iso.ID,
+  RAM:1024,CPUs:1,NICModel:"e1000",NICCount:1,DiskBus:"ide",
+ }},Links:[]Link{}}
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,disk,iso)
+ s.store.State.Labs=append(s.store.State.Labs,lab)
+ old:=s.store.path
+ blocked:=filepath.Join(s.data,"blocked-state")
+ if err:=os.MkdirAll(blocked,0750);err!=nil{t.Fatal(err)}
+ s.store.path=blocked
+ s.store.mu.Unlock()
+ url:="/api/labs/"+lab.ID+"/nodes/"+lab.Nodes[0].ID+"/media"
+ code,body:=httpCall(t,s,"PATCH",url,[]byte(`{"installISOId":"","bootOrder":"disk"}`),true)
+ assertStatus(t,code,500,body)
+ s.store.mu.Lock()
+ node:=findNode(&s.store.State.Labs[0],lab.Nodes[0].ID)
+ if node==nil||node.InstallISOID!=iso.ID||node.BootOrder!=""{t.Fatalf("rollback failed: %+v",node)}
+ s.store.path=old
+ s.store.mu.Unlock()
+}
