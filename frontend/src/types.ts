@@ -23,7 +23,7 @@ export interface Lab {
   id: string; name: string; nodes: Device[]; links: Cable[]
   annotations?: Annotation[]
 }
-export interface ImageRecord { id: string; name: string; format?: string; size?: number }
+export interface ImageRecord { id: string; name: string; format?: string; size?: number; createdAt?: string }
 export interface Template {
   id: string; name: string; kind?: DeviceKind; engine?: 'vpcs' | 'qemu';
   ram?: number; cpus?: number; portStyle?: string; nicCount?: number;
