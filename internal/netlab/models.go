@@ -74,6 +74,7 @@ type Node struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
 	ImageID   string     `json:"imageId"`
+	InstallISOID string `json:"installIsoId,omitempty"` // temporary installer; never part of published base
 	Engine    string     `json:"engine,omitempty"` // empty = legacy QEMU, or vpcs
 	RAM       int        `json:"ram"`
 	CPUs      int        `json:"cpus"`
@@ -105,6 +106,7 @@ type Link struct {
 type Lab struct {
 	ID          string       `json:"id"`
 	Name        string       `json:"name"`
+	Workshop    bool         `json:"workshop,omitempty"`
 	CreatedAt   time.Time    `json:"createdAt"`
 	Nodes       []Node       `json:"nodes"`
 	Links       []Link       `json:"links"`
@@ -119,9 +121,34 @@ type Image struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+type InstallMedia struct {
+	ID string `json:"id"`
+	Name string `json:"name"`
+	Size int64 `json:"size"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+type PreparedTemplate struct {
+	ID string `json:"id"`
+	ImageID string `json:"imageId"`
+	Name string `json:"name"`
+	Category string `json:"category"`
+	Family string `json:"family"`
+	Version string `json:"version"`
+	Kind string `json:"kind"`
+	RAM int `json:"ram"`
+	CPUs int `json:"cpus"`
+	NICModel string `json:"nicModel"`
+	NICCount int `json:"nicCount"`
+	DiskBus string `json:"diskBus"`
+	PortStyle string `json:"portStyle"`
+	Icon string `json:"icon,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+}
 type State struct {
-	Labs   []Lab   `json:"labs"`
+	Labs []Lab `json:"labs"`
 	Images []Image `json:"images"`
+	Media []InstallMedia `json:"media"`
+	Catalog []PreparedTemplate `json:"catalog"`
 }
 
 func newID() string {
@@ -150,6 +177,7 @@ func validateNode(n Node) error {
 		return errors.New("неподдерживаемый движок устройства")
 	}
 	if n.Engine == "vpcs" {
+		if n.InstallISOID != "" {return errors.New("VPCS не поддерживает установочный ISO")}
 		if n.ImageID != "" || n.NICCount != 1 {
 			return errors.New("VPCS не использует диск и поддерживает ровно один Ethernet-порт")
 		}
@@ -196,6 +224,9 @@ func validateNode(n Node) error {
 	}
 	if n.Engine == "vpcs" {
 		return nil
+	}
+	if n.InstallISOID != "" && !validID(n.InstallISOID) {
+		return errors.New("недопустимый идентификатор установочного ISO")
 	}
 	if n.ImageID == "" {
 		return errors.New("выберите образ")

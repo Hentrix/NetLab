@@ -6,7 +6,7 @@ import { useNetlabStore } from '@/stores/netlab'
 import type { ImageRecord } from '@/types'
 
 const store=useNetlabStore()
-const emit=defineEmits<{(e:'create-node',imageId:string):void}>()
+const emit=defineEmits<{(e:'create-node',imageId:string):void;(e:'create-template',profileId:string):void}>()
 const query=ref('')
 const order=ref<'name'|'size'|'newest'>('name')
 const file=ref<File|null>(null)
@@ -30,6 +30,10 @@ const filtered=computed(()=>{
     order.value==='newest'? (b.createdAt||'').localeCompare(a.createdAt||'') :
     a.name.localeCompare(b.name,'ru'))
 })
+const categories=[{id:'server',name:'Серверы'},{id:'desktop',name:'Рабочие станции'},{id:'network',name:'Сетевые устройства'},{id:'other',name:'Прочее'}]
+const publishedGroups=computed(()=>categories.map(category=>({
+ ...category,profiles:store.catalog.filter(profile=>profile.category===category.id)
+})).filter(group=>group.profiles.length))
 const totalBytes=computed(()=>store.images.reduce((sum,image)=>sum+(image.size||0),0))
 const formatBytes=(size:number)=>size>=1073741824?`${(size/1073741824).toFixed(2)} ГиБ`:`${(size/1048576).toFixed(1)} МиБ`
 function chooseFile(event:Event){file.value=(event.target as HTMLInputElement).files?.[0]||null}
@@ -74,6 +78,19 @@ async function remove(image:ImageRecord){
       <label class="image-library-search"><Search :size="16"/><input v-model="query" aria-label="Поиск образов" placeholder="Поиск по имени или формату"/></label>
       <label>Сортировка<UiSelect v-model="order" aria-label="Сортировка образов"><option value="name">По названию</option><option value="size">По размеру</option><option value="newest">Сначала новые</option></UiSelect></label>
     </div>
+    <div class="image-catalog">
+      <h2>Готовые операционные системы</h2>
+      <p>Подготовленные администратором образы с собственным диском для каждого устройства. Выберите версию и добавьте её в лабораторию.</p>
+      <section v-for="category in publishedGroups" :key="category.id" class="image-catalog-group">
+        <h3>{{category.name}}</h3>
+        <div v-for="profile in category.profiles" :key="profile.id" class="image-catalog-profile">
+          <div><strong>{{profile.family}} · {{profile.version}}</strong><small>{{profile.name}} · {{profile.ram}} МиБ · {{profile.cpus}} vCPU</small></div>
+          <button type="button" :disabled="!store.activeLab" @click="emit('create-template',profile.id)"><Monitor :size="15"/> Добавить</button>
+        </div>
+      </section>
+      <p v-if="!publishedGroups.length">Готовых систем пока нет. Администратор может опубликовать первую в мастерской образов.</p>
+    </div>
+    <h2 class="image-library-disk-title">Файлы виртуальных дисков</h2>
     <div class="image-library-results">
       <article v-for="image in filtered" :key="image.id" class="image-library-item">
         <div class="image-library-symbol"><HardDrive :size="22"/></div>

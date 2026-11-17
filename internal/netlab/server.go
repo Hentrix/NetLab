@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,9 @@ type Server struct {
 	engine           *Engine
 	data, web, token string
 	sampler          metricSampler
+	ticketMu sync.Mutex
+	tickets map[string]graphicsTicket
+	publishing map[string]bool // guarded by store.mu
 }
 
 func NewServer(data, web, token string) (*Server, error) {
@@ -32,7 +36,7 @@ func NewServer(data, web, token string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, dir := range []string{data, filepath.Join(data, "images"), filepath.Join(data, "runtime")} {
+	for _, dir := range []string{data, filepath.Join(data, "images"), filepath.Join(data, "runtime"), filepath.Join(data, "media")} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, err
 		}
@@ -46,7 +50,7 @@ func NewServer(data, web, token string) (*Server, error) {
 	if _, err := exec.LookPath("ovs-vsctl"); err == nil {
 		e.Recover(store.State.Labs)
 	}
-	return &Server{store: store, engine: e, data: data, web: web, token: token}, nil
+	return &Server{store: store, engine: e, data: data, web: web, token: token, publishing: make(map[string]bool), tickets:make(map[string]graphicsTicket)}, nil
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -57,6 +61,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		respond(w, 200, map[string]any{"status": "ok", "version": "0.8.2"})
 	})
+	mux.HandleFunc("/api/graphics/",s.serveGraphics)
 	mux.Handle("/api/", s.auth(http.HandlerFunc(s.api)))
 	mux.Handle("/", http.FileServer(http.Dir(s.web)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -158,11 +163,32 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			fail(w, 405, "method not allowed")
 			return
 		}
-		respond(w, 200, []map[string]any{{"id": "generic", "kind": "server", "name": "Generic x86 QEMU", "portStyle": "eth", "ram": 1024, "cpus": 1, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "mikrotik-chr", "kind": "router", "name": "MikroTik CHR", "portStyle": "ether", "ram": 256, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "ide"}, {"id": "cisco-iosv", "kind": "router", "name": "Cisco IOSv", "portStyle": "gi", "ram": 768, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "virtio"}, {"id": "linux", "kind": "pc", "name": "Linux VM", "portStyle": "eth", "ram": 2048, "cpus": 2, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "vpcs", "engine": "vpcs", "kind": "pc", "name": "VPCS", "portStyle": "eth", "ram": 128, "cpus": 1, "nicModel": "e1000", "nicCount": 1, "diskBus": "ide"}})
+		templates:=[]map[string]any{{"id": "generic", "kind": "server", "name": "Generic x86 QEMU", "portStyle": "eth", "ram": 1024, "cpus": 1, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "mikrotik-chr", "kind": "router", "name": "MikroTik CHR", "portStyle": "ether", "ram": 256, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "ide"}, {"id": "cisco-iosv", "kind": "router", "name": "Cisco IOSv", "portStyle": "gi", "ram": 768, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "virtio"}, {"id": "linux", "kind": "pc", "name": "Linux VM", "portStyle": "eth", "ram": 2048, "cpus": 2, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "vpcs", "engine": "vpcs", "kind": "pc", "name": "VPCS", "portStyle": "eth", "ram": 128, "cpus": 1, "nicModel": "e1000", "nicCount": 1, "diskBus": "ide"}}
+		s.store.mu.Lock()
+		for _,profile:=range s.store.State.Catalog {
+			templates=append(templates,map[string]any{
+			"id":profile.ID,"name":profile.Name,"imageId":profile.ImageID,"kind":profile.Kind,"engine":"qemu",
+			"ram":profile.RAM,"cpus":profile.CPUs,"nicModel":profile.NICModel,"nicCount":profile.NICCount,
+			"diskBus":profile.DiskBus,"portStyle":profile.PortStyle,"icon":profile.Icon,
+			"category":profile.Category,"family":profile.Family,"version":profile.Version,
+			})
+		}
+		s.store.mu.Unlock()
+		respond(w,200,templates)
 		return
 	case "images":
+		if len(parts)==2 && parts[1]=="blank" && r.Method==http.MethodPost {
+			s.createBlankImage(w,r); return
+		}
 		s.imagesAPI(w, r, parts)
 		return
+	case "graphics-ticket":
+		if r.Method!=http.MethodPost {fail(w,405,"method not allowed");return}
+		s.issueGraphicsTicket(w,r);return
+	case "media":
+		s.mediaAPI(w,r,parts); return
+	case "catalog":
+		s.catalogAPI(w,r,parts); return
 	case "labs":
 		s.labsAPI(w, r, parts)
 		return
@@ -265,6 +291,9 @@ func (s *Server) imagesAPI(w http.ResponseWriter, r *http.Request, p []string) {
 	if len(p) == 2 && r.Method == "DELETE" && validID(p[1]) {
 		s.store.mu.Lock()
 		defer s.store.mu.Unlock()
+		for _, tpl := range s.store.State.Catalog {
+			if tpl.ImageID == p[1] {fail(w,409,"образ опубликован в каталоге: сначала удалите профиль"); return}
+		}
 		for _, lab := range s.store.State.Labs {
 			for _, n := range lab.Nodes {
 				if n.ImageID == p[1] {
@@ -357,8 +386,14 @@ func parseInt(s string) (int, error) { var v int; _, err := fmt.Sscanf(s, "%d", 
 
 // Each node selects its own emulation driver. Legacy saved nodes default to QEMU.
 func (s *Server) startNode(l Lab, n Node) error {
+	if s.publishing[key(l.ID,n.ID)] {return errors.New("образ устройства публикуется: дождитесь завершения операции")}
 	if n.Engine == "vpcs" {
 		return s.engine.StartVPCS(l, n)
+	}
+	if n.InstallISOID!="" {
+		found:=false
+		for _, media := range s.store.State.Media {if media.ID==n.InstallISOID {found=true; break}}
+		if !found {return errors.New("установочный ISO не найден")}
 	}
 	img := findImage(&s.store.State, n.ImageID)
 	if img == nil {
@@ -382,6 +417,7 @@ func (s *Server) labsAPI(w http.ResponseWriter, r *http.Request, p []string) {
 		if r.Method == "POST" {
 			var req struct {
 				Name string `json:"name"`
+				Workshop bool `json:"workshop,omitempty"`
 			}
 			if !decode(w, r, &req) {
 				return
@@ -390,7 +426,7 @@ func (s *Server) labsAPI(w http.ResponseWriter, r *http.Request, p []string) {
 				fail(w, 400, err.Error())
 				return
 			}
-			lab := Lab{ID: newID(), Name: strings.TrimSpace(req.Name), CreatedAt: time.Now(), Nodes: []Node{}, Links: []Link{}, Annotations: []Annotation{}}
+			lab := Lab{ID: newID(), Name: strings.TrimSpace(req.Name), Workshop:req.Workshop, CreatedAt: time.Now(), Nodes: []Node{}, Links: []Link{}, Annotations: []Annotation{}}
 			s.store.mu.Lock()
 			s.store.State.Labs = append(s.store.State.Labs, lab)
 			err := s.store.save()
@@ -508,6 +544,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			fail(w, 400, err.Error())
 			return
 		}
+		if err:=s.checkInstaller(req.Template);err!=nil{fail(w,404,err.Error());return}
 		if req.Template.Engine != "vpcs" && findImage(&s.store.State, req.Template.ImageID) == nil {
 			fail(w, 404, "образ не найден")
 			return
@@ -556,6 +593,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			fail(w, 400, err.Error())
 			return
 		}
+		if err := s.checkInstaller(req); err != nil { fail(w,404,err.Error());return }
 		if req.Engine != "vpcs" && findImage(&s.store.State, req.ImageID) == nil {
 			fail(w, 404, "образ не найден")
 			return
@@ -578,6 +616,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 		return
 	}
 	if len(p) == 4 {
+		if r.Method==http.MethodDelete && s.publishing[key(l.ID,node.ID)] {fail(w,409,"идёт публикация диска");return}
 		// Presentation-only edits may be saved while virtual machines are running.
 		// Never replace QEMU settings or image IDs through this endpoint.
 		if r.Method == "PATCH" {
@@ -662,6 +701,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 				fail(w, 400, err.Error())
 				return
 			}
+			if err:=s.checkInstaller(req);err!=nil{fail(w,404,err.Error());return}
 			if req.Engine != "vpcs" && findImage(&s.store.State, req.ImageID) == nil {
 				fail(w, 404, "образ не найден")
 				return
