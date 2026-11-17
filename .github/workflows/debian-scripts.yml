@@ -28,7 +28,7 @@ jobs:
       - name: Check read-only help mode
         run: |
           bash scripts/check-host.sh --help | grep -q -- '--strict-kvm'
-          bash scripts/check-host.sh --help | grep -q 'без запуска VM'
+          bash scripts/check-host.sh --help | grep -q 'Не запускает гостевые VM'
       - name: Reject unknown arguments safely
         run: |
           set +e
