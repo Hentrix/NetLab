@@ -2,13 +2,16 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api, json } from '@/api/client'
 import { sameTopologyStructure } from '@/topology/status-reconcile'
-import type { Cable, Device, Annotation, ImageRecord, Lab, Template, HostSystem, HostMetrics } from '@/types'
+import type { Cable, Device, Annotation, ImageRecord, Lab, Template, PreparedTemplate, HostSystem, HostMetrics } from '@/types'
 
 export const useNetlabStore = defineStore('netlab', () => {
   const token = ref(sessionStorage.getItem('netlabToken') || '')
   const labs = ref<Lab[]>([])
   const images = ref<ImageRecord[]>([])
   const templates = ref<Template[]>([])
+  const catalog=ref<PreparedTemplate[]>([])
+  async function refreshTemplates(){templates.value=await api<Template[]>(token.value,'templates')}
+  async function refreshCatalog(){catalog.value=await api<PreparedTemplate[]>(token.value,'catalog')}
   const system = ref<HostSystem>({})
   const metrics = ref<HostMetrics | null>(null)
   const checking = ref(false)
@@ -44,7 +47,7 @@ export const useNetlabStore = defineStore('netlab', () => {
     await action(async () => {
       const result = await api<Lab[]>(token.value, 'labs')
       labs.value = result
-      if (!labID.value || !result.some(l=>l.id===labID.value)) labID.value = result[0]?.id ?? null
+      if (!labID.value || !result.some(l=>l.id===labID.value)) labID.value = result.find(l=>!l.workshop)?.id ?? null
       if (selectedID.value && !activeLab.value?.nodes.some(n=>n.id===selectedID.value)) selectedID.value = null
       live.value = true
     }).catch(() => { live.value = false })
@@ -91,11 +94,11 @@ export const useNetlabStore = defineStore('netlab', () => {
     try {
       await refresh()
       if (!live.value) return
-      const [imgs, tpls, sys, met] = await Promise.all([
+      const [imgs, tpls, sys, met, published] = await Promise.all([
         api<ImageRecord[]>(token.value,'images'), api<Template[]>(token.value,'templates'),
-        api<HostSystem>(token.value,'system'), api<HostMetrics>(token.value,'metrics')
+        api<HostSystem>(token.value,'system'), api<HostMetrics>(token.value,'metrics'), api<PreparedTemplate[]>(token.value,'catalog')
       ])
-      images.value = imgs; templates.value = tpls; system.value = sys; metrics.value = met
+      images.value = imgs; templates.value = tpls; system.value = sys; metrics.value = met; catalog.value=published
     } catch(e) { failure.value = (e as Error).message }
     finally { busy.value = false }
   }
@@ -246,7 +249,7 @@ export const useNetlabStore = defineStore('netlab', () => {
   async function labPower(operation: 'start' | 'stop') {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
   }
-  return {token,labs,images,templates,system,metrics,checking,labID,selectedID,selectedDeviceIDs,selectDeviceGroup,clickDeviceInSidebar,busy,failure,live,activeLab,selectedNode,
+  return {token,labs,images,templates,catalog,refreshCatalog,refreshTemplates,system,metrics,checking,labID,selectedID,selectedDeviceIDs,selectDeviceGroup,clickDeviceInSidebar,busy,failure,live,activeLab,selectedNode,
     authenticate,logout,refresh,pollActiveLab,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,refreshImages,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
     removeNode,updateNode,configureQemuNode,bulkNodes,moveTopologyItems,connect,disconnect,updateCable,labPower}
 })

@@ -1,7 +1,7 @@
 export type DeviceStatus = 'running' | 'stopped' | 'error' | string
 export type DeviceKind = 'router' | 'switch' | 'pc' | 'firewall' | 'server' | string
 export interface Device {
-  id: string; name: string; imageId?: string; icon?: string
+  id: string; name: string; imageId?: string; installIsoId?: string; icon?: string
   engine?: 'vpcs' | 'qemu'; kind?: DeviceKind; status?: DeviceStatus
   x: number; y: number; nicCount?: number; portStyle?: string; ports?: PortSpec[]; error?: string
   ram?: number; cpus?: number; nicModel?: string; diskBus?: string
@@ -20,12 +20,19 @@ export interface Annotation {
   italic?: boolean; underline?: boolean; align?: 'left' | 'center' | 'right'
 }
 export interface Lab {
-  id: string; name: string; nodes: Device[]; links: Cable[]
+  id: string; name: string; workshop?: boolean; nodes: Device[]; links: Cable[]
   annotations?: Annotation[]
 }
 export interface ImageRecord { id: string; name: string; format?: string; size?: number; createdAt?: string }
+export interface InstallMedia {id:string;name:string;size:number;createdAt?:string}
+export interface PreparedTemplate {
+ id:string;imageId:string;name:string;category:'desktop'|'server'|'network'|'other';
+ family:string;version:string;kind:string;ram:number;cpus:number;nicModel:string;
+ nicCount:number;diskBus:string;portStyle:string;icon?:string;createdAt?:string
+}
 export interface Template {
-  id: string; name: string; kind?: DeviceKind; engine?: 'vpcs' | 'qemu';
+  id: string; name: string; imageId?:string; category?:string;family?:string;version?:string;
+  kind?: DeviceKind; engine?: 'vpcs' | 'qemu';
   ram?: number; cpus?: number; portStyle?: string; nicCount?: number;
   nicModel?: string; diskBus?: string
 }
