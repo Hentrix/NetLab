@@ -44,6 +44,9 @@ func NewServer(data, web, token string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := recoverStagedImageDeletes(data, store.State.Images); err != nil {
+		return nil, err
+	}
 	e := NewEngine(data)
 	// Reconcile stale lab switches only when the system tools are present.
 	if _, err := exec.LookPath("ovs-vsctl"); err == nil {
