@@ -2,7 +2,7 @@ package netlab
 
 import (
  "fmt"
- "os"
+ "runtime"
 )
 
 // VMCapacity reports configured guest allocations (not actual RSS). It is
@@ -50,7 +50,7 @@ func (s *Server) capacityLocked() VMCapacity {
   if total>=used {cap.HostAvailableMiB=total-used}
   cap.ReservationLimitMiB=total-reserveRAMMiB(total)
  }
- cap.HostCPUs=runtimeCPUCount()
+ cap.HostCPUs=runtime.NumCPU()
  for _,lab:=range s.store.State.Labs {
   for _,n:=range lab.Nodes {
    if n.Engine=="vpcs" {continue}
@@ -64,6 +64,3 @@ func (s *Server) capacityLocked() VMCapacity {
  return cap
 }
 
-var runtimeCPUCount = func() int {return len(os.Getenv("NETLAB_CPU_PLACEHOLDER"))}
-// runtime.NumCPU is used below; keep it independent from any configuration
-// so the displayed capacity always reflects the Debian host.
