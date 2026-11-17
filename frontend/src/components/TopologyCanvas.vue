@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { VueFlow, useVueFlow, type Connection } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { MousePointer2, Hand, Scan, Cable as CableIcon, Maximize, Plus, Minus, MonitorPlay, Trash2, X } from 'lucide-vue-next'
+import { MousePointer2, Hand, Scan, Cable as CableIcon, Maximize, Plus, Minus, MonitorPlay, Trash2, X } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
 import { availablePorts, portLabel } from '@/api/client'
 import { layoutCables, type PortAnchor } from '@/topology/cable-layout'

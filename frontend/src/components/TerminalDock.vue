@@ -2,7 +2,7 @@
 import { nextTick, onBeforeUnmount, ref, watch, computed, markRaw } from 'vue'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { TerminalSquare, X, Minus, Maximize2, RefreshCcw } from 'lucide-vue-next'
+import { TerminalSquare, X, Minus, Maximize2, RefreshCcw } from '@lucide/vue'
 import type { Device } from '@/types'
 import { useNetlabStore } from '@/stores/netlab'
 const store = useNetlabStore()

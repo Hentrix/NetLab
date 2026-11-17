@@ -30,7 +30,7 @@ CORS и стороннем доступе к JavaScript.
 | `pinia` | Единое состояние лабораторий, узлов и авторизации |
 | `@vue-flow/core`, `@vue-flow/background` | Полотно, рёбра, соединение, трансформации |
 | `@xterm/xterm`, `@xterm/addon-fit` | Долгоживущие терминалы CLI с вводом и ANSI |
-| `lucide-vue-next` | Единая библиотека SVG-иконок |
+| `@lucide/vue` | Единая библиотека SVG-иконок |
 | `vite`, `@vitejs/plugin-vue`, `vue-tsc` | Сборка, типизация и разработка |
 
 ## Структура
