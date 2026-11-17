@@ -119,7 +119,7 @@ func (s *Server) workshopAPI(w http.ResponseWriter,r *http.Request,p []string){
  }
  info,err:=os.Stat(final)
  if err!=nil{_ = os.Remove(final);fail(w,500,err.Error());return}
- img:=Image{ID:id,Name:strings.TrimSpace(req.Name),Kind:"disk",Format:"qcow2",Category:req.Category,Family:strings.TrimSpace(req.Family),Version:strings.TrimSpace(req.Version),Published:true,Size:info.Size(),CreatedAt:time.Now()}
+ img:=Image{ID:id,Name:strings.TrimSpace(req.Name),Kind:"disk",Format:"qcow2",Category:req.Category,Family:strings.TrimSpace(req.Family),Version:strings.TrimSpace(req.Version),Published:true,RAM:node.RAM,CPUs:node.CPUs,NICModel:node.NICModel,NICCount:node.NICCount,DiskBus:node.DiskBus,PortStyle:node.PortStyle,Icon:node.Icon,Size:info.Size(),CreatedAt:time.Now()}
  s.store.State.Images=append(s.store.State.Images,img)
  if err:=s.store.save();err!=nil{
   s.store.State.Images=s.store.State.Images[:len(s.store.State.Images)-1]
@@ -147,7 +147,8 @@ func (s *Server) catalogTemplates() []map[string]any {
   result=append(result,map[string]any{
     "id":"image:"+img.ID,"name":name,"engine":"qemu","kind":kind,
     "imageId":img.ID,"category":img.Category,"family":img.Family,"version":img.Version,
-    "ram":2048,"cpus":2,"nicCount":2,"nicModel":"e1000","diskBus":"ide","portStyle":"eth",
+    "ram":img.RAM,"cpus":img.CPUs,"nicCount":img.NICCount,
+    "nicModel":img.NICModel,"diskBus":img.DiskBus,"portStyle":img.PortStyle,"icon":img.Icon,
   })
  }
  return result
