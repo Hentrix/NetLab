@@ -226,3 +226,6 @@
 .inspector-collapse-control{border:1px solid var(--border);border-radius:6px;color:var(--muted);background:var(--surface-2);padding:4px 8px;margin:4px;float:right}
 .device-entry[draggable="true"]{cursor:grab}
 .canvas-scale button{min-width:28px}
+
+/* Console activity indicator in non-active tabs. */
+.term-unread{display:inline-block;width:6px;height:6px;margin-left:5px;border-radius:50%;background:var(--accent);vertical-align:middle}
