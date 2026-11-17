@@ -81,6 +81,24 @@ async function performBulk(operation:'start'|'stop'|'delete'){
   }finally{bulkBusy.value=false}
 }
 const selectedTab=ref<'overview'|'ports'>('overview')
+const inspectorCollapsed=ref(false)
+async function deleteCanvasSelection(ids:string[]){
+  if(!ids.length||!confirm(`Удалить выбранные устройства (${ids.length}) со всеми кабелями?`))return
+  await store.bulkNodes(ids,'delete')
+}
+function chooseDroppedTemplate(payload:{templateID:string;x:number;y:number}){
+  requestedNodePosition.value={x:payload.x,y:payload.y}
+  if(store.templates.some(t=>t.id===payload.templateID)){
+    templateID.value=payload.templateID
+    changeTemplate()
+  }
+  addOpen.value=true
+}
+function onDeviceDrag(event:DragEvent,node:Device){
+  if(!event.dataTransfer)return
+  event.dataTransfer.setData('application/x-netlab-node',node.id)
+  event.dataTransfer.effectAllowed='move'
+}
 const hardwareOpen=ref(false)
 const hardwareSaving=ref(false)
 const hardwareID=ref('')
@@ -298,17 +316,19 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
         <div v-if="store.activeLab" class="workspace">
           <aside class="device-list"><header>Устройства <button title="Добавить устройство" @click="openAdd"><Plus :size="17"/></button></header><input v-model="search" placeholder="Поиск устройств" aria-label="Поиск устройств"/><div class="list-scroll"><div v-for="group in deviceGroups" :key="group.id" class="device-category">
             <button class="device-category-title" @click="folded[group.id]=!folded[group.id]" :aria-expanded="!folded[group.id]"><ChevronDown :size="14" class="device-category-chevron" :class="{folded:folded[group.id]}"/>{{group.title}}<small>{{group.devices.length}}</small></button>
-            <template v-if="!folded[group.id]"><button v-for="node in group.devices" :key="node.id" class="device-entry" :class="{selected:store.selectedID===node.id}" @click="store.selectedID=node.id">
+            <template v-if="!folded[group.id]"><button v-for="node in group.devices" :key="node.id" class="device-entry" draggable="true" @dragstart="onDeviceDrag($event,node)" :class="{selected:store.selectedID===node.id}" @click="store.selectedID=node.id">
               <img v-if="node.icon" :src="`/icons/${encodeURIComponent(node.icon)}`" alt=""/>
               <component :is="kindIcon(node.kind)==='pc'?Monitor:kindIcon(node.kind)==='shield'?Shield:kindIcon(node.kind)==='server'?Server:Router" v-else :size="22"/>
               <span><b>{{node.name}}</b><small>{{imageName(node)}}</small></span><i :class="node.status"/>
             </button></template>
           </div></div><button class="add-row" @click="openAdd"><Plus :size="16"/> Добавить устройство</button></aside>
-          <TopologyCanvas @console="consoleOpen" @add="openAdd" @add-at="openAddAt" @bulk="openBulkFromCanvas" @device-action="deviceContextAction" />
-          <aside class="inspector"><template v-if="store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
+          <TopologyCanvas @console="consoleOpen" @add="openAdd" @add-at="openAddAt" @template-at="chooseDroppedTemplate" @delete-selection="deleteCanvasSelection" @bulk="openBulkFromCanvas" @device-action="deviceContextAction" />
+          <aside class="inspector" :class="{'inspector-collapsed':inspectorCollapsed}">
+            <button type="button" class="inspector-collapse-control" :title="inspectorCollapsed?'Развернуть свойства':'Свернуть свойства'" @click="inspectorCollapsed=!inspectorCollapsed">{{inspectorCollapsed?'‹':'›'}}</button>
+            <template v-if="!inspectorCollapsed&&store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
             <template v-if="selectedTab==='overview'"><div class="inspector-content"><label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong><label>vCPU / RAM</label><strong>{{store.selectedNode.engine==='vpcs'?'—':`${store.selectedNode.cpus||1} / ${store.selectedNode.ram||256} МБ`}}</strong><label>Интерфейсы</label><strong>{{store.selectedNode.nicCount||16}}</strong></div><div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
             <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{cable.aPort}} ↔ {{cable.bPort}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
-          </template><div v-else class="inspector-empty">Выберите устройство<br/>на топологии</div></aside>
+          </template><div v-else-if="!inspectorCollapsed" class="inspector-empty">Выберите устройство<br/>на топологии</div></aside>
         </div>
         <div v-else class="empty-panel"><Router :size="38"/><h2>Создайте лабораторию</h2><p>Устройства, кабели и настройки будут сохранены на Debian-сервере.</p><button class="primary" @click="createLabOpen=true"><Plus :size="16"/> Новая лаборатория</button></div>
         <footer class="status-bar"><span><i :class="{ok:store.live}"/>{{liveStatus}}</span><span>{{store.activeLab?.nodes.length||0}} устройств</span><span>{{store.activeLab?.links.length||0}} соединений</span><span>NetLab · экспериментальный Vue-редактор</span></footer>

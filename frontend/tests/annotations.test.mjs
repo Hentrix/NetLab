@@ -27,8 +27,8 @@ test('annotation nodes are integrated with Vue Flow, dragging and editing',()=>{
   assert.match(canvas,/store\.moveTopologyItems\(dragged\.map/)
   assert.match(store,/async function moveTopologyItems\(/)
   assert.match(store,/annotations\.get\(annotationID\)/)
-  assert.match(canvas,/newAnnotation\('text'\)/)
-  assert.match(canvas,/newAnnotation\('note'\)/)
+  assert.match(canvas,/drawingMode\.value==='text'/)
+  assert.match(canvas,/newAnnotation\(drawingMode\.value,screenToFlowCoordinate/)
   assert.match(canvas,/store\.removeAnnotation\(annotationID\.value\)/)
 })
 test('PNG snapshot draws annotations and includes them in bounds',()=>{
