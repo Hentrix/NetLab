@@ -174,7 +174,16 @@ const pending = ref<{a:string;b:string} | null>(null)
 const chosen = ref({ a:0, b:0 })
 const saving = ref(false)
 const selectedOnCanvas=ref<string[]>([])
-const selectedDevices=computed(()=>selectedOnCanvas.value.filter(id=>current.value?.nodes.some(device=>device.id===id)))
+// The inspector/sidebar uses store.selectedID, while Vue Flow owns a separate
+// selection-change event. Both must produce the same persistent visual outline.
+function isDeviceSelected(id:string){
+  return store.selectedID===id||selectedOnCanvas.value.includes(id)
+}
+const selectedDevices=computed(()=>{
+  const ids=new Set(selectedOnCanvas.value.filter(id=>current.value?.nodes.some(device=>device.id===id)))
+  if(store.selectedID&&current.value?.nodes.some(device=>device.id===store.selectedID))ids.add(store.selectedID)
+  return [...ids]
+})
 const movingGroup=ref(false)
 function selectionChanged(event:{nodes:Array<{id:string}>}){
   if(panMode.value||cableMode.value){selectedOnCanvas.value=[];return}
@@ -498,12 +507,12 @@ const portsByNode = computed(() => {
 const nodes = computed(() => [
   ...(current.value?.nodes.map(device=>({
     id:device.id,type:'device',position:{x:device.x,y:device.y},
-    selected:selectedOnCanvas.value.includes(device.id),
+    selected:isDeviceSelected(device.id),
     draggable:!panMode.value,selectable:!panMode.value,
     data:{device,anchors:portsByNode.value.get(device.id)||[],
       hovered:hoveredDeviceID.value===device.id,
       connected:connectedHoverDevices.value.has(device.id),
-      selected:selectedOnCanvas.value.includes(device.id)}
+      selected:isDeviceSelected(device.id)}
   }))||[]),
   ...(current.value?.annotations||[]).map(annotation=>{
     const preview=resizePreview.value?.id===annotation.id?resizePreview.value.rect:null
