@@ -41,7 +41,7 @@ test('left Ctrl and Meta click preserve selection across device hover updates', 
   assert.match(canvas, /selected:isDeviceSelected\(device\.id\)/)
   assert.match(canvas, /selected:selectedOnCanvas\.value\.includes\(`annotation:\$\{annotation\.id\}`\)/)
   assert.match(canvas, /@selection-change="selectionChanged"/)
-  assert.match(canvas, /selectedOnCanvas\.value=event\.nodes\.map\(node=>node\.id\)/)
+  assert.match(canvas, /const selected=event\.nodes\.map\(node=>node\.id\)/)
 })
 
 test('device click keeps a visible selection border after mouse leaves', () => {
@@ -58,12 +58,12 @@ test('sidebar and inspector selection keeps a device outlined after pointer leav
   const device=read('../src/components/DeviceNode.vue')
   const css=read('../src/styles/app.css')
   assert.match(canvas,/function isDeviceSelected\(id:string\)/)
-  assert.match(canvas,/store\.selectedID===id\|\|selectedOnCanvas\.value\.includes\(id\)/)
+  assert.match(canvas,/store\.selectedDeviceIDs\.includes\(id\)\|\|selectedOnCanvas\.value\.includes\(id\)/)
   assert.match(canvas,/selected:isDeviceSelected\(device\.id\)/)
   assert.match(device,/device-selected':data\.selected/)
   assert.match(css,/\.vue-flow__node-device \.device-node\.device-selected/)
-  assert.match(canvas,/store\.selectedID=selected\.includes\(id\)\?id:/)
-  assert.match(canvas,/store\.selectedID=null/)
+  assert.match(canvas,/store\.selectDeviceGroup\(selectedDevices,primary\)/)
+  assert.match(canvas,/store\.selectDeviceGroup\(\[\],null\)/)
 })
 
 test('Ctrl-click uses the incoming mouse event to toggle membership without Vue Flow clobbering it', () => {
@@ -74,4 +74,13 @@ test('Ctrl-click uses the incoming mouse event to toggle membership without Vue 
   assert.match(canvas,/@selection-end="selectingArea=false"/)
   assert.match(canvas,/watch\(\(\)=>store\.selectedID,id=>/)
   assert.match(canvas,/flush:'sync'/)
+})
+
+test('all selected devices are highlighted in the sidebar and clicks work both ways',()=>{
+  assert.match(app,/:class="\{selected:store\.selectedDeviceIDs\.includes\(node\.id\)\}"/)
+  assert.match(app,/@click="store\.clickDeviceInSidebar\(node\.id,\$event\.ctrlKey\|\|\$event\.metaKey\)"/)
+  assert.match(canvas,/store\.selectDeviceGroup\(selectedDevices,primary\)/)
+  assert.match(canvas,/watch\(\(\)=>store\.selectedDeviceIDs,ids=>/)
+  assert.match(store,/function clickDeviceInSidebar\(id: string, additive: boolean\)/)
+  assert.match(store,/function selectDeviceGroup\(ids: string\[\], primary\?: string \| null\)/)
 })
