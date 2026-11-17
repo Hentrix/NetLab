@@ -111,7 +111,7 @@ async function remove(image:ImageRecord){
       <label>Сортировка<UiSelect v-model="order" aria-label="Сортировка образов"><option value="name">По названию</option><option value="size">По размеру</option><option value="newest">Сначала новые</option></UiSelect></label>
     </div>
     <div class="image-library-results">
-      <article v-for="image in filtered" :key="image.id" class="image-library-item">
+      <article v-for="image in filtered" :key="image.id" class="image-library-item" :class="{'image-library-item-editing':editingID===image.id}">
         <div class="image-library-symbol"><Disc3 v-if="image.kind==='iso'||image.format==='iso'" :size="22"/><HardDrive v-else :size="22"/></div>
         <div class="image-library-info"><strong>{{image.name}}</strong>
           <span>{{image.kind==='iso'||image.format==='iso'?'Установочный ISO':image.published?'Готовый шаблон':image.draft?'Диск для подготовки':'Образ диска'}} · {{(image.format||'unknown').toUpperCase()}} · {{formatBytes(image.size||0)}}</span>
@@ -137,7 +137,8 @@ async function remove(image:ImageRecord){
   </section>
 </template>
 <style scoped>
-.image-library-metadata{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px;border-top:1px solid var(--border);min-width:0}
+.image-library-item-editing{flex-wrap:wrap}
+.image-library-metadata{flex:0 0 100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px;border-top:1px solid var(--border);min-width:0}
 .image-library-metadata label{display:grid;gap:6px;font-size:12px;color:var(--muted);min-width:0}
 .image-library-metadata input{width:100%;min-width:0;padding:9px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--ink)}
 .image-library-metadata-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}
