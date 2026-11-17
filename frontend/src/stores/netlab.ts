@@ -135,7 +135,7 @@ export const useNetlabStore = defineStore('netlab', () => {
   async function updateImageMetadata(id:string,name:string,category:string,family:string,version:string){
     const image=await action(()=>api<ImageRecord>(token.value,`images/${id}`,{method:'PATCH',
       body:json({name,category,family,version})}))
-    await refreshImages()
+    await Promise.all([refreshImages(),refreshTemplates()])
     return image
   }
   async function refreshTemplates(){
