@@ -53,3 +53,15 @@ test('device click keeps a visible selection border after mouse leaves', () => {
   assert.match(css,/\.vue-flow__node-device\.selected \.device-node/)
   assert.match(css,/\.device-node\.device-selected/)
 })
+
+test('sidebar and inspector selection keeps a device outlined after pointer leaves', () => {
+  const device=read('../src/components/DeviceNode.vue')
+  const css=read('../src/styles/app.css')
+  assert.match(canvas,/function isDeviceSelected\(id:string\)/)
+  assert.match(canvas,/store\.selectedID===id\|\|selectedOnCanvas\.value\.includes\(id\)/)
+  assert.match(canvas,/selected:isDeviceSelected\(device\.id\)/)
+  assert.match(device,/device-selected':data\.selected/)
+  assert.match(css,/\.vue-flow__node-device \.device-node\.device-selected/)
+  assert.match(canvas,/store\.selectedID=event\.node\.id/)
+  assert.match(canvas,/store\.selectedID=null/)
+})
