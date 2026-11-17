@@ -4,8 +4,6 @@ import (
  "crypto/rand"
  "encoding/base64"
  "encoding/hex"
- "errors"
- "fmt"
  "io"
  "net"
  "net/http"
@@ -107,7 +105,3 @@ func (s *Server) proxyVNC(w http.ResponseWriter,r *http.Request){
  _=browser.Close()
  select{case <-done:case <-time.After(time.Second):}
 }
-
-// An offline image cannot be displayed by the remote VNC proxy.
-var _ = errors.New
-var _ = fmt.Sprintf
