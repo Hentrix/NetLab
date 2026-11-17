@@ -334,3 +334,7 @@
 .topology-annotation .annotation-content::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
 .annotation-transparency{display:flex!important;align-items:center;gap:8px}
 .annotation-transparency input{min-width:0}
+
+/* Legacy status counts and non-overlapping, screen-reader-only tool hint. */
+.nav-count{margin-left:auto;font-size:10px;color:var(--muted);font-weight:550}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}

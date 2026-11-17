@@ -695,6 +695,11 @@ function closeEditor(){editingID.value=null}
     </VueFlow>
     <div v-if="hoverTip" class="topology-hover-tip" role="status" :style="{left:hoverTip.left+'px',top:hoverTip.top+'px'}">{{hoverTip.text}}</div>
     <!-- Exact tool order of the legacy editor: select, hand, cable / marquee, text, note / add. -->
+    <div class="sr-only" role="status" aria-live="polite">
+      {{panMode?'Режим перемещения полотна':cableMode?'Режим соединения устройств':
+        drawingMode==='marquee'?'Выделение рамкой':drawingMode==='text'?'Добавление текста':
+        drawingMode==='note'?'Рисование примечания':'Режим выбора устройств'}}
+    </div>
     <div class="canvas-tools" role="toolbar" aria-label="Инструменты топологии">
       <button type="button" :class="{on:!panMode&&!cableMode&&drawingMode==='select'}" title="Выбор и перемещение (V)" aria-label="Выбор и перемещение" @click="setCanvasMode('select')"><MousePointer2 :size="17"/></button>
       <button type="button" :class="{on:panMode}" title="Перемещение полотна (H / Space)" aria-label="Перемещение полотна" @click="setCanvasMode('pan')"><Hand :size="17"/></button>
