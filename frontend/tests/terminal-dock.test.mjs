@@ -23,3 +23,15 @@ test('terminal focus is independent of ResizeObserver fitting', () => {
   assert.match(component, /void focusSession\(id\)/)
   assert.match(markup, /class="terminal-hosts" v-show="!minimized" @pointerdown="focusConsoleArea"/)
 })
+
+test('switching terminal tabs retains measurable hosts and activates xterm textarea', () => {
+  assert.match(component, /function showSession\(id:string\)/)
+  const switcher = component.split('function showSession(id:string)')[1].split('function focusTerminal')[0]
+  assert.match(switcher, /style\.visibility=selected\?'visible':'hidden'/)
+  assert.match(switcher, /style\.pointerEvents=selected\?'auto':'none'/)
+  assert.doesNotMatch(component, /host\.style\.display=/)
+  assert.match(component, /querySelector<HTMLTextAreaElement>\('\.xterm-helper-textarea'\)/)
+  assert.match(component, /focus\(\{preventScroll:true\}\)/)
+  assert.match(component, /@pointerdown\.prevent="select\(s\.id\)"/)
+  assert.match(component, /showSession\(id\)/)
+})

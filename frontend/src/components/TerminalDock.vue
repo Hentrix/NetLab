@@ -121,15 +121,14 @@ async function open(device:Device){
   if(sessions.value.length>=12)return
   const term=new XTerm({cursorBlink:true,convertEol:false,scrollback:7000,theme:palette(dark.value),fontSize:13,fontFamily:'Consolas, "Cascadia Code", monospace'})
   const fit=new FitAddon();term.loadAddon(fit)
-  const host=document.createElement('div');host.className='terminal-instance';host.style.display='none'
+  const host=document.createElement('div');host.className='terminal-instance';host.style.visibility='hidden';host.style.pointerEvents='none'
   const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve(),stopped:false,stopNoticeShown:false,inputBuffer:'',flushTimer:null}
   sessions.value.push(s);current.value=id;minimized.value=false
   await nextTick()
   const holder=dock.value?.querySelector('.terminal-hosts')
   if(!holder){sessions.value=sessions.value.filter(item=>item.id!==id);term.dispose();return}
-  for(const item of sessions.value)item.host.style.display=item.id===id?'block':'none'
   holder.appendChild(host)
-  host.style.display='block'
+  showSession(id)
   term.open(host)
   term.onData(text=>send(s,text))
   await nextTick()
@@ -139,6 +138,23 @@ async function open(device:Device){
 // Fitting and focusing are independent operations: ResizeObserver can fire
 // while a tab switch is pending and must NEVER cancel keyboard focus.
 let focusRevision=0
+function showSession(id:string){
+  for(const session of sessions.value){
+    const selected=session.id===id
+    // Keep every xterm mounted and measurable. display:none causes its
+    // textarea and character measurements to lose focus when switching tabs.
+    session.host.style.visibility=selected?'visible':'hidden'
+    session.host.style.pointerEvents=selected?'auto':'none'
+    session.host.style.zIndex=selected?'1':'0'
+  }
+}
+function focusTerminal(session:Session){
+  session.term.focus()
+  // xterm.js uses a hidden textarea for keyboard input. Focus it directly
+  // when the browser retained focus on a tab button after changing sessions.
+  const textarea=session.host.querySelector<HTMLTextAreaElement>('.xterm-helper-textarea')
+  if(textarea&&document.activeElement!==textarea)textarea.focus({preventScroll:true})
+}
 function fitActive(){
   const session=active.value
   if(!session||minimized.value)return
@@ -159,14 +175,14 @@ async function focusSession(id:string){
     if(session.host.clientWidth<=20||session.host.clientHeight<=20)return
     // Resize may occur between showing a hidden tab and focusing it.
     session.fit.fit()
-    session.term.focus()
+    focusTerminal(session)
   })
 }
 function select(id:string){
   if(!sessions.value.some(s=>s.id===id))return
   current.value=id
   minimized.value=false
-  for(const s of sessions.value)s.host.style.display=s.id===id?'block':'none'
+  showSession(id)
   void focusSession(id)
 }
 function focusConsoleArea(){
@@ -208,7 +224,7 @@ defineExpose({open})
       <div class="term-header-name"><TerminalSquare :size="18"/> Консоли NetLab</div>
       <div class="term-actions"><button title="Свернуть" @click="minimized=true"><Minus :size="16"/></button><button title="Развернуть" @click="maximized=!maximized"><Maximize2 :size="15"/></button><button title="Закрыть все консоли" @click="closeAll"><X :size="17"/></button></div>
     </div>
-    <nav class="term-tabs" v-show="!minimized"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @click="select(s.id)"><i :class="s.status"/>{{s.name}}</button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
+    <nav class="term-tabs" v-show="!minimized"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @pointerdown.prevent="select(s.id)" @click="select(s.id)"><i :class="s.status"/>{{s.name}}</button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
       <div class="terminal-hosts" v-show="!minimized" @pointerdown="focusConsoleArea"></div>
       <footer class="term-footer" v-show="!minimized"><span>{{active?.status==='online'?'Соединение активно':active?.status==='stopped'?'Устройство остановлено':'Подключение / ожидание API'}}</span><button @click="active&&select(active.id)"><RefreshCcw :size="13"/> Обновить отображение</button></footer>
     <button v-if="minimized" class="restore-console" @click="minimized=false">{{sessions.length}} вкладок · Развернуть</button>
