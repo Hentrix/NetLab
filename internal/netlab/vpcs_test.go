@@ -2,6 +2,9 @@ package netlab
 
 import (
 	"encoding/json"
+	"bytes"
+	"io"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -76,4 +79,41 @@ func TestVPCSAPIWithoutDisk(t *testing.T) {
 	assertStatus(t, code, 400, body)
 	code, body = httpCall(t, server, "POST", url+"/batch", []byte(`{"template":{"name":"PC","engine":"vpcs","kind":"pc","nicCount":1},"count":3}`), true)
 	assertStatus(t, code, 201, body)
+}
+
+type captureVPCSInput struct{ bytes.Buffer }
+func (w *captureVPCSInput) Close() error { return nil }
+
+func TestVPCSControlCDoesNotReachPTY(t *testing.T) {
+	writer := &captureVPCSInput{}
+	console := &Console{writer: writer}
+	interrupts := 0
+	if err := writeVPCSConsole(console, "ping 192.168.100.3\r\x03ip 192.168.100.2\r", func() error {
+		interrupts++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if interrupts != 1 {
+		t.Fatalf("expected exactly one VPCS SIGINT, got %d", interrupts)
+	}
+	if got, want := writer.String(), "ping 192.168.100.3\r"+"ip 192.168.100.2\r"; got != want {
+		t.Fatalf("unexpected PTY bytes: %q, want %q", got, want)
+	}
+	if bytes.Contains(writer.Bytes(), []byte{0x03}) {
+		t.Fatal("Ctrl+C passed to PTY instead of isolated process group")
+	}
+}
+
+func TestVPCSControlCInterruptErrorStopsInput(t *testing.T) {
+	writer := &captureVPCSInput{}
+	console := &Console{writer: writer}
+	stop := io.ErrClosedPipe
+	err := writeVPCSConsole(console, "before\x03after", func() error { return stop })
+	if err == nil || !errors.Is(err, stop) {
+		t.Fatalf("expected signal failure: %v", err)
+	}
+	if writer.String() != "before" {
+		t.Fatalf("input continued after failure: %q", writer.String())
+	}
 }

@@ -135,7 +135,42 @@ func (e *Engine) WriteConsole(lab, node, text string) error {
 	if len(text) > 8192 {
 		return errors.New("превышен размер ввода")
 	}
+	if i.engine == "vpcs" {
+		if i.cmd == nil || i.cmd.Process == nil {
+			return errors.New("процесс VPCS недоступен")
+		}
+		// Ctrl+C must reach the isolated VPCS process group, never the
+		// API daemon. Writing ETX to the PTY may generate SIGINT for the
+		// terminal foreground group, which is not reliably VPCS when the
+		// PTY has no controlling session (Debian 13 / systemd).
+		return writeVPCSConsole(i.console, text, func() error {
+			return syscall.Kill(-i.cmd.Process.Pid, syscall.SIGINT)
+		})
+	}
 	return i.console.write(text)
+}
+
+// writeVPCSConsole sends regular keyboard input through PTY but translates
+// the terminal interrupt character into a signal addressed ONLY to the
+// VPCS process group (StartVPCS sets Setpgid=true). It never writes ETX to
+// the PTY, preventing accidental signals to the NetLab HTTP daemon.
+func writeVPCSConsole(c *Console, input string, interrupt func() error) error {
+	for len(input) > 0 {
+		index := strings.IndexByte(input, 0x03)
+		if index < 0 {
+			return c.write(input)
+		}
+		if index > 0 {
+			if err := c.write(input[:index]); err != nil {
+				return err
+			}
+		}
+		if err := interrupt(); err != nil {
+			return fmt.Errorf("прерывание команды VPCS: %w", err)
+		}
+		input = input[index+1:]
+	}
+	return nil
 }
 func run(bin string, args ...string) error {
 	out, err := exec.Command(bin, args...).CombinedOutput()
