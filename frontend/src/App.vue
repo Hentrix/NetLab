@@ -15,6 +15,7 @@ const page=ref<'labs'|'images'|'system'>('labs')
 const theme=ref<'light' | 'dark'>(localStorage.getItem('netlab-theme')==='dark'?'dark':'light')
 const newLab=ref('');const createLabOpen=ref(false)
 const addOpen=ref(false)
+const requestedNodePosition=ref<{x:number;y:number}|null>(null)
 const batchCount=ref(1)
 const templateID=ref('vpcs');const imageID=ref('');const deviceName=ref('');const nicCount=ref(4)
 const inFlight=ref(false)
@@ -124,6 +125,8 @@ function toggleTheme(){theme.value=dark.value?'light':'dark';document.documentEl
 async function login(){store.authenticate(tokenEntry.value);await store.bootstrap()}
 async function submitLab(){if(!newLab.value.trim())return;await store.createLab(newLab.value);createLabOpen.value=false;newLab.value=''}
 function openAdd(){
+  requestedNodePosition.value=null
+
   batchCount.value=1
   profileSearch.value=''
   templateID.value=store.templates[0]?.id||'vpcs'
@@ -131,6 +134,10 @@ function openAdd(){
   deviceName.value=selectedTemplate.value?.name||'Устройство'
   nicCount.value=selectedTemplate.value?.nicCount||4
   addOpen.value=true
+}
+function openAddAt(position:{x:number;y:number}){
+  openAdd()
+  requestedNodePosition.value=position
 }
 function addFromImage(image:string){
   if(!store.activeLab){store.failure='Сначала выберите лабораторию';return}
@@ -150,7 +157,7 @@ async function addDevice(){
     const idx=store.activeLab.nodes.length
     const payload: Partial<Device>={name:deviceName.value.trim()||t.name,kind:t.kind||'router',engine:t.engine||'qemu',imageId:t.engine==='vpcs'?'':imageID.value,
       nicCount:t.engine==='vpcs'?1:nicCount.value,portStyle:t.portStyle||'eth',ram:t.ram||256,cpus:t.cpus||1,
-      nicModel:t.nicModel||'e1000',diskBus:t.diskBus||'ide',x:100+(idx%5)*185,y:130+Math.floor(idx/5)*150}
+      nicModel:t.nicModel||'e1000',diskBus:t.diskBus||'ide',x:requestedNodePosition.value?.x??(100+(idx%5)*185),y:requestedNodePosition.value?.y??(130+Math.floor(idx/5)*150)}
     if(batchCount.value>1)await store.addNodesBatch(payload,batchCount.value)
     else await store.addNode(payload)
     addOpen.value=false
@@ -231,7 +238,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
               <span><b>{{node.name}}</b><small>{{imageName(node)}}</small></span><i :class="node.status"/>
             </button></template>
           </div></div><button class="add-row" @click="openAdd"><Plus :size="16"/> Добавить устройство</button></aside>
-          <TopologyCanvas @console="consoleOpen" @add="openAdd" @bulk="openBulkFromCanvas" @device-action="deviceContextAction" />
+          <TopologyCanvas @console="consoleOpen" @add="openAdd" @add-at="openAddAt" @bulk="openBulkFromCanvas" @device-action="deviceContextAction" />
           <aside class="inspector"><template v-if="store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
             <template v-if="selectedTab==='overview'"><div class="inspector-content"><label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong><label>vCPU / RAM</label><strong>{{store.selectedNode.engine==='vpcs'?'—':`${store.selectedNode.cpus||1} / ${store.selectedNode.ram||256} МБ`}}</strong><label>Интерфейсы</label><strong>{{store.selectedNode.nicCount||16}}</strong></div><div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
             <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{cable.aPort}} ↔ {{cable.bPort}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
