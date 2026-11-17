@@ -76,7 +76,10 @@ func TestVPCSPTYDisablesKernelGeneratedSIGINT(t *testing.T) {
 	if errno != 0 {
 		t.Fatal(errno)
 	}
-	if term.Lflag&syscall.ISIG != 0 {
-		t.Fatal("PTY must not generate SIGINT on Ctrl+C")
+	if term.Lflag&(syscall.ISIG|syscall.ICANON|syscall.ECHO|syscall.IEXTEN) != 0 {
+		t.Fatalf("PTY must be raw and must not echo/block Ctrl+C: lflag=%#x", term.Lflag)
+	}
+	if term.Cc[syscall.VMIN] != 1 || term.Cc[syscall.VTIME] != 0 {
+		t.Fatal("VPCS PTY must deliver each input byte without waiting for Enter")
 	}
 }

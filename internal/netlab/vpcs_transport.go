@@ -156,25 +156,30 @@ func openVPCSPTY() (master, slave *os.File, err error) {
 	if err != nil {
 		return fail(err)
 	}
-	// A child launched without a controlling terminal can inherit PTY ISIG.
-	// When VPCS restores its saved termios after readline, ETX (Ctrl+C)
-	// must remain a byte, never a terminal-generated signal to a host
-	// process group. Long-running commands receive an explicitly scoped
-	// SIGINT through WriteConsole instead.
-	if err := disablePTYSignals(slave); err != nil {
+	// VPCS saves the initial termios and restores it after each readline.
+	// With the default canonical/echo mode, Ctrl+C is displayed as ^C and
+	// held in the line buffer instead of being delivered to VPCS. Start
+	// in noncanonical, no-echo, no-ISIG mode; VPCS may toggle its own
+	// editor options while keeping these safe baseline flags.
+	if err := configureVPCSPTY(slave); err != nil {
 		_ = slave.Close()
 		return fail(fmt.Errorf("настройка PTY VPCS: %w", err))
 	}
 	return master, slave, nil
 }
 
-func disablePTYSignals(slave *os.File) error {
+func configureVPCSPTY(slave *os.File) error {
 	var term syscall.Termios
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&term)))
 	if errno != 0 {
 		return errno
 	}
-	term.Lflag &^= syscall.ISIG
+	// Disable canonical buffering and the kernel's ^C echo; preserve OPOST
+	// for VPCS' terminal output. Signal delivery is explicitly scoped to the
+	// VPCS process group by the console handler.
+	term.Lflag &^= syscall.ICANON | syscall.ECHO | syscall.ISIG | syscall.IEXTEN
+	term.Cc[syscall.VMIN] = 1
+	term.Cc[syscall.VTIME] = 0
 	_, _, errno = syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TCSETS, uintptr(unsafe.Pointer(&term)))
 	if errno != 0 {
 		return errno
