@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {computed,ref} from 'vue'
-import {Disc3,HardDrive,PackageCheck,Wrench,Plus,Play,RotateCcw} from '@lucide/vue'
+import {Disc3,HardDrive,PackageCheck,Wrench,Plus,RotateCcw} from '@lucide/vue'
 import UiSelect from '@/components/UiSelect.vue'
 import {useNetlabStore} from '@/stores/netlab'
 const store=useNetlabStore()
