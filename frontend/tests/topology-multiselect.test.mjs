@@ -78,9 +78,10 @@ test('Ctrl-click uses the incoming mouse event to toggle membership without Vue 
 
 test('all selected devices are highlighted in the sidebar and clicks work both ways',()=>{
   assert.match(app,/:class="\{selected:store\.selectedDeviceIDs\.includes\(node\.id\)\}"/)
-  assert.match(app,/@click="store\.clickDeviceInSidebar\(node\.id,\$event\.ctrlKey\|\|\$event\.metaKey\)"/)
+  assert.match(app,/@click="selectSidebarNode\(node,\$event\)"/)
   assert.match(canvas,/store\.selectDeviceGroup\(selectedDevices,primary\)/)
   assert.match(canvas,/watch\(\(\)=>store\.selectedDeviceIDs,ids=>/)
   assert.match(store,/function clickDeviceInSidebar\(id: string, additive: boolean\)/)
+  assert.match(app,/store\.clickDeviceInSidebar\(device\.id,additive\)/)
   assert.match(store,/function selectDeviceGroup\(ids: string\[\], primary\?: string \| null\)/)
 })
