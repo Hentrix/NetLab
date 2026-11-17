@@ -47,7 +47,7 @@ test('left Ctrl and Meta click preserve selection across device hover updates', 
 test('device click keeps a visible selection border after mouse leaves', () => {
   const css=read('../src/styles/app.css')
   const device=read('../src/components/DeviceNode.vue')
-  assert.match(canvas,/selected:selectedOnCanvas\.value\.includes\(device\.id\)/)
+  assert.match(canvas,/selected:isDeviceSelected\(device\.id\)/)
   assert.match(canvas,/selected:isDeviceSelected\(device\.id\)\}/)
   assert.match(device,/device-selected':data\.selected/)
   assert.match(css,/\.vue-flow__node-device\.selected \.device-node/)
