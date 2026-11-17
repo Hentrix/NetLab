@@ -122,7 +122,76 @@ func (s *Server) updateImageMetadata(w http.ResponseWriter,r *http.Request,id st
  if err:=s.store.save();err!=nil{*img=before;fail(w,500,err.Error());return}
  respond(w,200,img)
 }
+// Create a writable preparation VM from an existing published version.
+// The new draft is flattened before exposure, so deleting the original
+// published version later cannot invalidate the revision's backing chain.
+func (s *Server) createWorkshopRevision(w http.ResponseWriter,r *http.Request) {
+ var req struct { ImageID string `json:"imageId"`; Name string `json:"name"`; Version string `json:"version"` }
+ if !decode(w,r,&req){return}
+ if !validID(req.ImageID){fail(w,400,"неверный ID исходного образа");return}
+ if err:=validName(req.Name);err!=nil{fail(w,400,err.Error());return}
+ if !validImageText(req.Version)||strings.TrimSpace(req.Version)==""{fail(w,400,"укажите версию длиной до 80 символов");return}
+ if _,err:=exec.LookPath("qemu-img");err!=nil{fail(w,503,"требуется qemu-img");return}
+ s.store.mu.Lock()
+ defer s.store.mu.Unlock()
+ base:=findImage(&s.store.State,req.ImageID)
+ if base==nil {fail(w,404,"исходный образ не найден");return}
+ if !base.Published||base.Draft||base.isISO()||base.Format!="qcow2" {
+  fail(w,409,"ревизию можно создать только из опубликованного QCOW2");return
+ }
+ if catalogVersionConflict(s.store.State.Images,"",base.Category,base.Family,req.Version) {
+  fail(w,409,"такая версия уже опубликована");return
+ }
+ original:=filepath.Join(s.data,"images",base.ID+"."+base.Format)
+ if _,err:=os.Stat(original);err!=nil{fail(w,409,"файл исходного образа недоступен");return}
+ id:=newID()
+ tmp:=filepath.Join(s.data,"images",id+".revising")
+ final:=filepath.Join(s.data,"images",id+".qcow2")
+ defer os.Remove(tmp)
+ if err:=run("qemu-img","convert","-f","qcow2","-O","qcow2",original,tmp);err!=nil {
+  fail(w,500,"не удалось скопировать образ: "+err.Error());return
+ }
+ if err:=os.Rename(tmp,final);err!=nil{fail(w,500,err.Error());return}
+ if u,err:=user.Lookup("netlab-vm");err==nil {
+  uid,_:=parseInt(u.Uid);gid,_:=parseInt(u.Gid);_ = os.Chown(final,uid,gid)
+ }
+ info,err:=os.Stat(final)
+ if err!=nil{_ = os.Remove(final);fail(w,500,err.Error());return}
+ disk:=*base
+ disk.ID=id
+ disk.Name=strings.TrimSpace(req.Name)
+ disk.Version=strings.TrimSpace(req.Version)
+ disk.Published=false
+ disk.Draft=true
+ disk.Kind="disk"
+ disk.Format="qcow2"
+ disk.Size=info.Size()
+ disk.CreatedAt=time.Now()
+ kind:="server"
+ switch base.Category {case "desktop":kind="pc";case "router","switch","firewall":kind=base.Category}
+ ram:=base.RAM;if ram<128{ram=2048}
+ cpus:=base.CPUs;if cpus<1{cpus=2}
+ nicModel:=base.NICModel;if nicModel==""{nicModel="e1000"}
+ diskBus:=base.DiskBus;if diskBus==""{diskBus="ide"}
+ nicCount:=base.NICCount;if nicCount<1{nicCount=2}
+ node:=Node{ID:newID(),Name:disk.Name,Engine:"qemu",ImageID:id,Kind:kind,
+  RAM:ram,CPUs:cpus,NICModel:nicModel,NICCount:nicCount,DiskBus:diskBus,
+  PortStyle:base.PortStyle,Icon:base.Icon,X:250,Y:180,Status:"stopped"}
+ if err:=validateNode(node);err!=nil{_ = os.Remove(final);fail(w,422,err.Error());return}
+ lab:=Lab{ID:newID(),Name:"Подготовка · "+disk.Name,CreatedAt:time.Now(),Nodes:[]Node{node},Links:[]Link{},Annotations:[]Annotation{}}
+ s.store.State.Images=append(s.store.State.Images,disk)
+ s.store.State.Labs=append(s.store.State.Labs,lab)
+ if err:=s.store.save();err!=nil{
+  s.store.State.Images=s.store.State.Images[:len(s.store.State.Images)-1]
+  s.store.State.Labs=s.store.State.Labs[:len(s.store.State.Labs)-1]
+  _ = os.Remove(final)
+  fail(w,500,err.Error());return
+ }
+ respond(w,201,map[string]any{"image":disk,"lab":lab,"node":node})
+}
+
 func (s *Server) workshopAPI(w http.ResponseWriter,r *http.Request,p []string){
+ if len(p)==2 && p[1]=="revise" && r.Method==http.MethodPost {s.createWorkshopRevision(w,r);return}
  if len(p)!=2 ||p[1]!="publish" ||r.Method!=http.MethodPost {fail(w,404,"неизвестное действие мастерской");return}
  var req struct{LabID string `json:"labId"`;NodeID string `json:"nodeId"`;Name string `json:"name"`;Category string `json:"category"`;Family string `json:"family"`;Version string `json:"version"`}
  if !decode(w,r,&req){return}
