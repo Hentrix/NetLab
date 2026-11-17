@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch, onBeforeUnmount, onMounted } from 'vue'
 import { VueFlow, useVueFlow, type Connection } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { MousePointer2, Hand, Scan, Cable as CableIcon, Maximize, Plus, Minus, MonitorPlay, Trash2, X, StickyNote, Type } from '@lucide/vue'
+import { MousePointer2, Hand, Scan, Cable as CableIcon, Maximize, Plus, Minus, MonitorPlay, Trash2, X, StickyNote, Type, Play, Square } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
 import { availablePorts, portLabel } from '@/api/client'
 import { layoutCables, type PortAnchor } from '@/topology/cable-layout'
@@ -13,7 +13,8 @@ import type { Device, Annotation } from '@/types'
 import { resizeAnnotation, clampAnnotationPosition, type ResizeSide, type AnnotationRect } from '@/topology/annotation-geometry'
 
 const store = useNetlabStore()
-const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'bulk', ids:string[]):void }>()
+type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'
+const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'bulk', ids:string[]):void; (e:'device-action', payload:{id:string;action:DeviceContextAction}):void }>()
 const { fitView, zoomIn, zoomOut, updateNodeInternals, viewport, screenToFlowCoordinate } = useVueFlow({ id:'netlab-topology' })
 const canvasElement=ref<HTMLElement|null>(null)
 const panMode = ref(false)
@@ -40,11 +41,36 @@ const annotationID=ref<string|null>(null)
 const annotationSaving=ref(false)
 const resizePreview=ref<{id:string;rect:AnnotationRect}|null>(null)
 const contextMenu=ref<{id:string;x:number;y:number}|null>(null)
+const deviceContextMenu=ref<{id:string;x:number;y:number}|null>(null)
+const contextDevice=computed(()=>current.value?.nodes.find(node=>node.id===deviceContextMenu.value?.id))
+const labHasRunningDevices=computed(()=>current.value?.nodes.some(node=>node.status==='running')||false)
+function closeDeviceContext(){deviceContextMenu.value=null}
+function openDeviceContext(payload:{id:string;event:MouseEvent}){
+  if(panMode.value||cableMode.value)return
+  if(!current.value?.nodes.some(node=>node.id===payload.id))return
+  dismissContextMenu()
+  const rect=canvasElement.value?.getBoundingClientRect()
+  if(!rect)return
+  const menuWidth=215,menuHeight=322
+  deviceContextMenu.value={
+    id:payload.id,
+    x:Math.max(8,Math.min(Math.max(8,rect.width-menuWidth-8),payload.event.clientX-rect.left)),
+    y:Math.max(8,Math.min(Math.max(8,rect.height-menuHeight-8),payload.event.clientY-rect.top))
+  }
+  store.selectedID=payload.id
+}
+function runDeviceContextAction(action:DeviceContextAction){
+  const item=contextDevice.value
+  closeDeviceContext()
+  if(!item)return
+  emit('device-action',{id:item.id,action})
+}
 const resizeState=ref<{original:Annotation;side:ResizeSide;startX:number;startY:number}|null>(null)
 const editingAnnotation=computed(()=>current.value?.annotations?.find(note=>note.id===contextMenu.value?.id))
 function dismissContextMenu(){contextMenu.value=null}
 function openAnnotationContext(payload:{annotation:Annotation;event:MouseEvent}){
   if(panMode.value||cableMode.value)return
+  closeDeviceContext()
   const rect=canvasElement.value?.getBoundingClientRect()
   if(!rect)return
   contextMenu.value={
@@ -117,7 +143,7 @@ async function resizeFinish(event:PointerEvent){
   catch(e){store.failure=(e as Error).message}
 }
 function onKeyboard(event:KeyboardEvent){
-  if(event.key==='Escape'){dismissContextMenu();if(resizeState.value)resizeCancel()}
+  if(event.key==='Escape'){dismissContextMenu();closeDeviceContext();if(resizeState.value)resizeCancel()}
 }
 onMounted(()=>window.addEventListener('keydown',onKeyboard))
 onBeforeUnmount(()=>{window.removeEventListener('keydown',onKeyboard);resizeCancel()})
@@ -202,7 +228,7 @@ const edges = computed(() => current.value?.links.filter(link=>geometry.value.ha
 // After adding/removing a cable, Vue Flow must remeasure DOM handles.
 const internalsKey = computed(() => `${store.labID}:${current.value?.nodes.map(n=>`${n.id}:${n.x},${n.y}`).join('|')}:${current.value?.links.map(l=>`${l.id}:${l.a}:${l.b}`).join('|')}`)
 watch(internalsKey,async()=>{await nextTick();updateNodeInternals((current.value?.nodes || []).map(n=>n.id))},{flush:'post'})
-watch(()=>store.labID,async()=>{firstCableNode.value=null;selectedOnCanvas.value=[];dismissContextMenu();resizeCancel();await nextTick();void fitView({padding:.22,duration:250})})
+watch(()=>store.labID,async()=>{firstCableNode.value=null;selectedOnCanvas.value=[];dismissContextMenu();closeDeviceContext();resizeCancel();await nextTick();void fitView({padding:.22,duration:250})})
 const startName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.a)?.name || '')
 const endName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.b)?.name || '')
 const firstPorts = computed(() => availablePorts(current.value?.nodes||[],current.value?.links||[],pending.value?.a||''))
@@ -265,7 +291,7 @@ function picked(event:{node:{id:string}}) {
   }
   store.selectedID=event.node.id
 }
-function canvasClick(){dismissContextMenu();if(!panMode.value&&!cableMode.value)store.selectedID=null}
+function canvasClick(){dismissContextMenu();closeDeviceContext();if(!panMode.value&&!cableMode.value)store.selectedID=null}
 function doubleClick(event:{node:{id:string}}){
   if(!event.node.id.startsWith('annotation:'))return
   const annotation=current.value?.annotations?.find(item=>item.id===event.node.id.slice('annotation:'.length))
@@ -274,13 +300,13 @@ function doubleClick(event:{node:{id:string}}){
 function closeEditor(){editingID.value=null}
 </script>
 <template>
-  <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @click.self="dismissContextMenu">
+  <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @click.self="dismissContextMenu();closeDeviceContext()">
     <VueFlow id="netlab-topology" :nodes="nodes" :edges="edges" :nodes-draggable="!panMode" :nodes-connectable="!panMode"
       :elements-selectable="!panMode" :pan-on-drag="panMode" :selection-on-drag="!panMode"
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
       @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="canvasClick" @selection-change="selectionChanged">
       <Background pattern-color="var(--grid)" :gap="20" :size="1" />
-      <template #node-device="data"><DeviceNode :data="data.data" /></template>
+      <template #node-device="data"><DeviceNode :data="data.data" @device-context="openDeviceContext" /></template>
       <template #node-annotation="data"><AnnotationNode :data="data.data" @resize-start="resizeStart" @context="openAnnotationContext" /></template>
       <template #edge-cable="data"><CableEdge v-bind="data" /></template>
     </VueFlow>
@@ -304,6 +330,19 @@ function closeEditor(){editingID.value=null}
     <div v-if="!panMode&&!cableMode" class="canvas-selection-hint">Shift + перетаскивание — выделить рамкой · Ctrl/Cmd + клик — несколько устройств</div>
     <div v-if="cableMode" class="canvas-cable-hint"><CableIcon :size="14"/> {{firstCableNode?'Выберите второе устройство':'Выберите первое устройство'}} <button title="Отменить" @click="cableMode=false;firstCableNode=null"><X :size="13"/></button></div>
     <div v-if="!current?.nodes.length" class="canvas-empty"><MonitorPlay :size="30"/><strong>Лаборатория пуста</strong><span>Нажмите «+», чтобы добавить устройство</span></div>
+    <div v-if="deviceContextMenu&&contextDevice" class="device-context-menu" role="menu" :aria-label="'Действия с устройством '+contextDevice.name" :style="{left:`${deviceContextMenu.x}px`,top:`${deviceContextMenu.y}px`}">
+      <div class="device-context-heading">{{contextDevice.name}} <small>{{contextDevice.status==='running'?'Запущено':'Остановлено'}}</small></div>
+      <button v-if="contextDevice.status!=='running'" type="button" role="menuitem" @click="runDeviceContextAction('start')"><Play :size="15"/> Запустить</button>
+      <button v-else type="button" role="menuitem" @click="runDeviceContextAction('stop')"><Square :size="15"/> Остановить</button>
+      <button type="button" role="menuitem" @click="runDeviceContextAction('console')"><MonitorPlay :size="15"/> Открыть консоль</button>
+      <div class="device-context-divider"></div>
+      <button type="button" role="menuitem" @click="runDeviceContextAction('rename')"><Type :size="15"/> Переименовать</button>
+      <button type="button" role="menuitem" @click="runDeviceContextAction('ports')"><CableIcon :size="15"/> Интерфейсы</button>
+      <button v-if="contextDevice.engine!=='vpcs'" type="button" role="menuitem" @click="runDeviceContextAction('hardware')"><Scan :size="15"/> Параметры QEMU</button>
+      <button type="button" role="menuitem" @click="runDeviceContextAction('icon')"><StickyNote :size="15"/> Выбрать значок</button>
+      <div class="device-context-divider"></div>
+      <button type="button" role="menuitem" class="danger" :disabled="labHasRunningDevices" :title="labHasRunningDevices?'Для удаления остановите лабораторию':'Удалить узел и его соединения'" @click="runDeviceContextAction('delete')"><Trash2 :size="15"/> Удалить устройство</button>
+    </div>
     <div v-if="contextMenu&&editingAnnotation" class="annotation-context-menu" role="menu" aria-label="Аннотация" :style="{left:`${contextMenu.x}px`,top:`${contextMenu.y}px`}">
       <button type="button" role="menuitem" @click="contextEdit">Изменить оформление</button>
       <button type="button" role="menuitem" @click="contextDuplicate">Дублировать</button>
