@@ -19,6 +19,17 @@ if command -v qemu-system-x86_64 >/dev/null 2>&1; then
     runuser -u netlab-vm -- "${bin}" --version 2>&1 || true
   fi
 fi
+printf '\n-- VPCS binary and user permissions --\n'
+if command -v vpcs >/dev/null 2>&1; then
+  bin=$(command -v vpcs)
+  ls -l "$bin" || true
+  command -v namei >/dev/null 2>&1 && namei -l "$bin" || true
+  if id netlab-vm >/dev/null 2>&1; then
+    runuser -u netlab-vm -- "$bin" -v </dev/null 2>&1 || true
+  fi
+else
+  echo 'VPCS binary not found'
+fi
 printf '\n-- VM service user and KVM --\n'
 id netlab-vm 2>&1 || true
 ls -l /dev/kvm 2>&1 || true
@@ -33,6 +44,11 @@ if [[ "$pid" =~ ^[0-9]+$ ]] && ((pid > 0)) && [[ -r /proc/${pid}/status ]]; then
     else
       echo 'CAP_SETUID (effective): NO; Go syscall.Credential will fail with EPERM'
     fi
+  fi
+  if (( (16#$cap_eff & 64) != 0 )); then
+    echo 'CAP_SETGID (effective): yes; Go may switch group and supplementary groups'
+  else
+    echo 'CAP_SETGID (effective): NO; Go syscall.Credential may fail with EPERM'
   fi
 fi
 printf '\n-- Last NetLab messages --\n'

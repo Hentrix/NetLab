@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import { Activity, Cpu, HardDrive, Network, ShieldCheck, Server, Monitor, RefreshCw, CheckCircle2, AlertTriangle, Info, Layers3, TerminalSquare } from 'lucide-vue-next'
+import { Activity, Cpu, HardDrive, Network, ShieldCheck, Server, Monitor, RefreshCw, CheckCircle2, AlertTriangle, Info, Layers3, TerminalSquare } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
 const store=useNetlabStore()
 const caps=computed(()=>[

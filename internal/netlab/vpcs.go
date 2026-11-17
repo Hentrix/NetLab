@@ -98,7 +98,11 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 	_, _ = fmt.Fprintf(logFile, "\n[NetLab] VPCS UDP: source=%d relay=%d tap=%s\n", sourcePort, transport.udp.LocalAddr().(*net.UDPAddr).Port, tap)
 	cmd := exec.Command("vpcs", vpcsArgs(sourcePort, transport.udp.LocalAddr().(*net.UDPAddr).Port, vpcsMACOffset(n.ID))...)
 	cmd.Dir = runtime
-	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred, Setsid: true, Setctty: true, Ctty: 0}
+	// The PTY slave is already connected to stdin/stdout/stderr. VPCS does not
+	// require acquiring it as a *controlling* terminal. TIOCSCTTY can fail with
+	// EPERM under a systemd service even when changing to netlab-vm succeeds.
+	// Keep the unprivileged UID/GID and supplementary group isolation intact.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
 	cmd.Stdin = slave
 	cmd.Stdout = slave
 	cmd.Stderr = slave
@@ -109,7 +113,7 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 		_ = logFile.Close()
 		transport.close()
 		cleanup()
-		return fmt.Errorf("запуск VPCS под netlab-vm: %w (проверьте systemd AmbientCapabilities=CAP_SETUID CAP_SETGID и sudo systemctl daemon-reload && sudo systemctl restart netlab)", err)
+		return fmt.Errorf("запуск VPCS под netlab-vm: %w; проверьте CapEff/CapBnd работающего процесса через sudo bash /opt/netlab/scripts/diagnose-qemu.sh, действующий systemd unit и права запуска /usr/bin/vpcs", err)
 	}
 	log.Printf("VPCS started: lab=%s node=%s pid=%d source=%d relay=%d", l.ID, n.ID, cmd.Process.Pid, sourcePort, transport.udp.LocalAddr().(*net.UDPAddr).Port)
 	_ = slave.Close()

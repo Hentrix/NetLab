@@ -1,0 +1,34 @@
+name: Go backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - '.github/workflows/backend.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go tests and vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Unit tests
+        run: go test ./...
+      - name: Static analysis
+        run: go vet ./...

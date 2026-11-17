@@ -59,6 +59,21 @@ export const useNetlabStore = defineStore('netlab', () => {
     } catch (error) { failure.value = (error as Error).message }
     finally { checking.value = false }
   }
+  async function deleteLab(id: string) {
+    await action(()=>api<unknown>(token.value,`labs/${id}`,{method:'DELETE'}))
+    if(labID.value===id){labID.value=null;selectedID.value=null}
+    await refresh()
+  }
+  async function uploadImage(file: File) {
+    const body=new FormData();body.append('file',file)
+    const image=await action(()=>api<ImageRecord>(token.value,'images',{method:'POST',body}))
+    images.value=await api<ImageRecord[]>(token.value,'images')
+    return image
+  }
+  async function deleteImage(id: string) {
+    await action(()=>api<unknown>(token.value,`images/${id}`,{method:'DELETE'}))
+    images.value=await api<ImageRecord[]>(token.value,'images')
+  }
   async function createLab(name: string) {
     const item = await action(()=>api<Lab>(token.value,'labs',{method:'POST',body:json({name})}))
     await refresh(); labID.value = item.id
@@ -70,6 +85,10 @@ export const useNetlabStore = defineStore('netlab', () => {
     const lab = current()
     await action(()=>api<Device>(token.value,`labs/${lab.id}/nodes`,{method:'POST',body:json(payload)})); await refresh()
   }
+  async function addNodesBatch(template: Partial<Device>, count: number) {
+    await action(()=>api<unknown>(token.value,`labs/${current().id}/nodes/batch`,{method:'POST',body:json({template,count})}))
+    await refresh()
+  }
   async function moveNode(id: string, x: number, y: number) {
     const lab = current()
     await action(()=>api<Device>(token.value,`labs/${lab.id}/nodes/${id}`,{method:'PATCH',body:json({x: Math.round(x), y: Math.round(y)})}))
@@ -77,6 +96,9 @@ export const useNetlabStore = defineStore('netlab', () => {
   }
   async function nodePower(id: string, operation: 'start' | 'stop') {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/nodes/${id}/${operation}`,{method:'POST'})); await refresh()
+  }
+  async function updateNode(id: string, payload: Pick<Partial<Device>, "icon" | "portStyle" | "ports">) {
+    await action(()=>api<Device>(token.value,`labs/${current().id}/nodes/${id}`,{method:"PATCH",body:json(payload)})); await refresh()
   }
   async function renameNode(id: string, name: string) {
     const lab = current()
@@ -99,6 +121,6 @@ export const useNetlabStore = defineStore('netlab', () => {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,busy,failure,live,activeLab,selectedNode,
-    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,renameLab,addNode,moveNode,nodePower,renameNode,
-    removeNode,connect,disconnect,updateCable,labPower}
+    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,renameLab,addNode,addNodesBatch,moveNode,nodePower,renameNode,
+    removeNode,updateNode,connect,disconnect,updateCable,labPower}
 })

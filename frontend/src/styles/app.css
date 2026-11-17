@@ -102,3 +102,29 @@
 .system-guidance-muted>svg {color:var(--accent)}
 @media(max-width:1100px){.system-summary-grid{grid-template-columns:1fr 1fr}.system-hero-card{grid-column:1/-1}.system-components{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.system-page{padding:15px}.system-page-heading{align-items:flex-start;flex-direction:column}.system-summary-grid,.system-components{grid-template-columns:1fr}.system-hero-card{grid-column:auto}.dialog-columns,.dialog-columns.cable-style{grid-template-columns:1fr}}
+
+/* Vue device inspector: per-interface labels (does not alter guest NIC speed). */
+.port-edit-action{display:flex;align-items:center;gap:8px;margin:12px 0;width:100%;justify-content:center}
+.port-editor-dialog{width:min(700px,calc(100vw - 32px));max-height:85vh;display:flex;flex-direction:column}
+.port-editor-dialog>p{font-size:12px;color:var(--muted);line-height:1.5}
+.port-editor-grid{overflow-y:auto;min-height:0;display:grid;gap:8px;padding:4px 0 8px}
+.port-editor-row{display:grid;grid-template-columns:60px minmax(0,1fr) minmax(130px,1fr);align-items:end;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px}
+.port-editor-row strong{font-size:12px;align-self:center}
+.port-editor-row label{min-width:0}
+.port-editor-row input,.port-editor-row select{width:100%;min-width:0}
+@media(max-width:600px){.port-editor-row{grid-template-columns:1fr 1fr}.port-editor-row strong{grid-column:1/-1}}
+
+.image-upload{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin:20px 0 24px}
+.image-upload label{display:flex;flex-direction:column;gap:7px;max-width:100%;font-size:12px;color:var(--muted)}
+.image-upload input{max-width:100%}
+.simple-page .list-row{gap:12px}
+.simple-page .list-row span{flex:1;min-width:0;overflow-wrap:anywhere}
+.simple-page .list-row button{margin-left:auto}
+
+.icon-picker-dialog{width:min(750px,calc(100vw - 32px));max-height:85vh;display:flex;flex-direction:column}
+.icon-picker-dialog>input{margin:10px 0}
+.icon-picker-list{overflow-y:auto;min-height:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.icon-picker-list button{border:1px solid var(--border);background:var(--surface);border-radius:8px;min-height:100px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:9px;color:var(--ink)}
+.icon-picker-list button:hover{border-color:var(--accent)}
+.icon-picker-list img{width:55px;height:55px;object-fit:contain}
+.icon-picker-list span{font-size:10px;word-break:break-word;line-height:1.3}

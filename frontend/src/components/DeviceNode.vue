@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Handle, Position } from '@vue-flow/core'
 import { computed } from 'vue'
-import { PlugZap, Router, Monitor } from 'lucide-vue-next'
+import { PlugZap, Router, Monitor } from '@lucide/vue'
 import type { Device } from '@/types'
 import type { PortAnchor, Side } from '@/topology/cable-layout'
 
