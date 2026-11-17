@@ -287,12 +287,21 @@ func (s *Server) workshopAPI(w http.ResponseWriter,r *http.Request,p []string){
  }
  overlay:=filepath.Join(s.data,"runtime",req.LabID,req.NodeID,"disk.qcow2")
  if _,err:=os.Stat(overlay);err!=nil{fail(w,409,"диск VM не найден: сначала запустите и установите ОС");return}
+ // A stopped VM can still have a damaged or incomplete runtime disk.
+ // Never publish a corrupt guest overlay as a shared catalog template.
+ if err:=run("qemu-img","check","-f","qcow2",overlay);err!=nil{
+  fail(w,422,"рабочий диск QCOW2 повреждён или недоступен: "+err.Error());return
+ }
  id:=newID()
  tmp:=filepath.Join(s.data,"images",id+".publishing")
  final:=filepath.Join(s.data,"images",id+".qcow2")
  defer os.Remove(tmp)
  // A flattened self-contained qcow2: no backing image and no dependency on the lab.
  if err:=run("qemu-img","convert","-f","qcow2","-O","qcow2",overlay,tmp);err!=nil{fail(w,500,"не удалось сохранить диск: "+err.Error());return}
+ // Validate the flattened result before it becomes a catalog base image.
+ if err:=run("qemu-img","check","-f","qcow2",tmp);err!=nil{
+  fail(w,500,"ошибка проверки опубликованного диска: "+err.Error());return
+ }
  if err:=os.Rename(tmp,final);err!=nil{fail(w,500,err.Error());return}
  if u,err:=user.Lookup("netlab-vm");err==nil {
   uid,_:=parseInt(u.Uid);gid,_:=parseInt(u.Gid);_ = os.Chown(final,uid,gid)

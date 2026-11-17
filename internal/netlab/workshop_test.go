@@ -51,7 +51,7 @@ func TestUploadISOAndRejectAsNodeDisk(t *testing.T){
 func TestWorkshopBlankDiskAndPublishVersion(t *testing.T){
  temp:=t.TempDir()
  bin:=filepath.Join(temp,"qemu-img")
- script:="#!/bin/sh\nif [ \"$1\" = create ]; then printf 'base disk' > \"$4\"; elif [ \"$1\" = convert ]; then cp \"$6\" \"$7\"; else exit 2; fi\n"
+ script:="#!/bin/sh\nif [ \"$1\" = create ]; then printf 'base disk' > \"$4\"; elif [ \"$1\" = convert ]; then cp \"$6\" \"$7\"; elif [ \"$1\" = check ]; then exit 0; else exit 2; fi\n"
  if err:=os.WriteFile(bin,[]byte(script),0755);err!=nil{t.Fatal(err)}
  t.Setenv("PATH",temp+string(os.PathListSeparator)+os.Getenv("PATH"))
  s:=newTestServer(t)
@@ -379,4 +379,55 @@ func TestWorkshopPrepareISOStateFailureRollsBack(t *testing.T) {
  files,err:=os.ReadDir(filepath.Join(s.data,"images"))
  if err!=nil{t.Fatal(err)}
  if len(files)!=0{t.Fatalf("orphaned preparation disk: %+v",files)}
+}
+
+
+func TestPublishRefusesCorruptWorkshopOverlay(t *testing.T){
+ binDir:=t.TempDir()
+ bin:=filepath.Join(binDir,"qemu-img")
+ script:="#!/bin/sh\nif [ \"$1\" = check ]; then echo 'damaged qcow2' >&2; exit 3; fi\nexit 0\n"
+ if err:=os.WriteFile(bin,[]byte(script),0755);err!=nil{t.Fatal(err)}
+ t.Setenv("PATH",binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+ s:=newTestServer(t)
+ draft:=Image{ID:newID(),Name:"Preparation",Format:"qcow2",Draft:true}
+ lab:=Lab{ID:newID(),Name:"Lab",Nodes:[]Node{{
+  ID:newID(),Name:"VM",Engine:"qemu",ImageID:draft.ID,
+ }},Links:[]Link{}}
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,draft)
+ s.store.State.Labs=append(s.store.State.Labs,lab)
+ s.store.mu.Unlock()
+ overlay:=filepath.Join(s.data,"runtime",lab.ID,lab.Nodes[0].ID,"disk.qcow2")
+ if err:=os.MkdirAll(filepath.Dir(overlay),0750);err!=nil{t.Fatal(err)}
+ if err:=os.WriteFile(overlay,[]byte("corrupt"),0600);err!=nil{t.Fatal(err)}
+ payload:=[]byte(`{"labId":"`+lab.ID+`","nodeId":"`+lab.Nodes[0].ID+`","name":"Damaged","category":"server","family":"Linux","version":"14"}`)
+ code,body:=httpCall(t,s,"POST","/api/workshop/publish",payload,true)
+ if code!=422||!strings.Contains(string(body),"QCOW2"){t.Fatalf("corrupt overlay accepted: %d %s",code,body)}
+ s.store.mu.Lock()
+ if len(s.store.State.Images)!=1{t.Fatalf("corrupt image published: %+v",s.store.State.Images)}
+ s.store.mu.Unlock()
+}
+
+func TestPublishRejectsBrokenFlattenedQCOW2(t *testing.T){
+ binDir:=t.TempDir()
+ bin:=filepath.Join(binDir,"qemu-img")
+ script:="#!/bin/sh\nif [ \"$1\" = check ]; then case \"$4\" in *.publishing) echo broken >&2; exit 2;; esac; exit 0; fi\nif [ \"$1\" = convert ]; then cp \"$6\" \"$7\"; exit $?; fi\nexit 2\n"
+ if err:=os.WriteFile(bin,[]byte(script),0755);err!=nil{t.Fatal(err)}
+ t.Setenv("PATH",binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+ s:=newTestServer(t)
+ draft:=Image{ID:newID(),Name:"Preparation",Format:"qcow2",Draft:true}
+ lab:=Lab{ID:newID(),Name:"Lab",Nodes:[]Node{{ID:newID(),Name:"VM",Engine:"qemu",ImageID:draft.ID}},Links:[]Link{}}
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,draft)
+ s.store.State.Labs=append(s.store.State.Labs,lab)
+ s.store.mu.Unlock()
+ overlay:=filepath.Join(s.data,"runtime",lab.ID,lab.Nodes[0].ID,"disk.qcow2")
+ if err:=os.MkdirAll(filepath.Dir(overlay),0750);err!=nil{t.Fatal(err)}
+ if err:=os.WriteFile(overlay,[]byte("installed"),0600);err!=nil{t.Fatal(err)}
+ payload:=[]byte(`{"labId":"`+lab.ID+`","nodeId":"`+lab.Nodes[0].ID+`","name":"Broken","category":"server","family":"Linux","version":"15"}`)
+ code,body:=httpCall(t,s,"POST","/api/workshop/publish",payload,true)
+ if code!=500||!strings.Contains(string(body),"опубликованного"){t.Fatalf("bad flattened qcow2 accepted: %d %s",code,body)}
+ files,err:=os.ReadDir(filepath.Join(s.data,"images"))
+ if err!=nil{t.Fatal(err)}
+ if len(files)!=0{t.Fatalf("orphaned result disk: %+v",files)}
 }

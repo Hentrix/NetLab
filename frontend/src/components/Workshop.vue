@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed,ref} from 'vue'
+import {computed,ref,watch} from 'vue'
 import {Disc3,HardDrive,PackageCheck,Wrench,Plus,RotateCcw} from '@lucide/vue'
 import UiSelect from '@/components/UiSelect.vue'
 import {useNetlabStore} from '@/stores/netlab'
@@ -69,6 +69,15 @@ const families=computed(()=>{
  return [...groups.values()].sort((a,b)=>a.category.localeCompare(b.category)||a.family.localeCompare(b.family,'ru'))
 })
 const selectedDraft=computed(()=>draftNodes.value.find(({lab,node})=>lab.id+':'+node.id===publishNodeID.value))
+watch(publishNodeID,id=>{
+ const item=draftNodes.value.find(({lab,node})=>lab.id+':'+node.id===id)
+ if(!item)return
+ const disk=store.images.find(image=>image.id===item.node.imageId)
+ name.value=item.node.name
+ if(disk?.family)family.value=disk.family
+ if(disk?.version)version.value=disk.version
+ if(disk?.category)category.value=disk.category
+})
 const publishReady=computed(()=>!!selectedDraft.value&&selectedDraft.value.node.status==='stopped')
 const mediaBusy=ref(false)
 const selectedISO=computed(()=>installers.value.find(image=>image.id===selectedDraft.value?.node.installISOId))
@@ -185,7 +194,8 @@ async function refresh(){
             <button type="button" :disabled="!publishReady||mediaBusy||!isoID||isoID===selectedDraft.node.installISOId" @click="changeMedia(isoID,'cdrom')">Подключить выбранный ISO</button>
           </div>
         </div>
-        <p>После завершения установки выключите гостевую ОС. Сервер объединит рабочий диск с базовым в отдельный QCOW2 и добавит версию в каталог. Исходная VM останется доступна.</p>
+        <p>После завершения установки выключите гостевую ОС. Перед публикацией NetLab проверит целостность рабочего QCOW2 и итогового шаблона. Исходная VM останется доступна.</p>
+        <small v-if="selectedDraft">Название, семейство и версия автоматически заполняются из выбранной подготовительной VM. Перед публикацией проверьте параметры.</small>
         <small v-if="selectedDraft && !publishReady" role="status">VM ещё не остановлена ({{selectedDraft.node.status||'состояние неизвестно'}}). Выключите её и нажмите «Обновить».</small>
         <button class="primary" type="button" :disabled="!publishReady||publishing||!name.trim()||!family.trim()||!version.trim()" @click="publish">
           <PackageCheck :size="16"/> {{publishing?'Публикация…':'Опубликовать образ'}}
