@@ -132,3 +132,16 @@ func TestVPCSStartFailureKeepsAPIAlive(t *testing.T) {
 		t.Fatal("API died after failed VPCS start")
 	}
 }
+
+func TestConsoleStoppedInstanceRejected(t *testing.T) {
+  s := newTestServer(t)
+  lab := Lab{ID:newID(),Name:"stopped",Nodes:[]Node{{ID:newID(),Name:"PC1",Engine:"vpcs",Kind:"pc",NICCount:1}}}
+  s.store.State.Labs=append(s.store.State.Labs,lab)
+  s.engine.instances[key(lab.ID,lab.Nodes[0].ID)]=&Instance{console:&Console{},done:make(chan struct{}),status:"stopped"}
+  stream := fmt.Sprintf("/api/labs/%s/nodes/%s/console/stream",lab.ID,lab.Nodes[0].ID)
+  code,body := httpCall(t,s,"GET",stream,nil,true)
+  if code!=409 {t.Fatalf("stopped stream: got %d: %s",code,body)}
+  send := fmt.Sprintf("/api/labs/%s/nodes/%s/console",lab.ID,lab.Nodes[0].ID)
+  code,body=httpCall(t,s,"POST",send,[]byte(`{"text":"ping 192.168.100.2\\r"}`),true)
+  if code!=409 {t.Fatalf("stopped stdin: got %d: %s",code,body)}
+}

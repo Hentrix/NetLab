@@ -110,6 +110,9 @@ func (e *Engine) ReadConsoleSince(lab, node string, offset int64) ([]byte, int64
 	if i == nil {
 		return nil, offset, false, errors.New("узел не запускался в этой сессии")
 	}
+	if i.status != "running" {
+		return nil, offset, false, errors.New("устройство остановлено; запустите его снова")
+	}
 	data, cursor, reset := i.console.readSince(offset)
 	return data, cursor, reset, nil
 }
@@ -126,8 +129,8 @@ func (e *Engine) WriteConsole(lab, node, text string) error {
 	e.mu.Lock()
 	i := e.instances[key(lab, node)]
 	e.mu.Unlock()
-	if i == nil {
-		return errors.New("узел не запущен")
+	if i == nil || i.status != "running" {
+		return errors.New("устройство не запущено; запустите его снова")
 	}
 	if len(text) > 8192 {
 		return errors.New("превышен размер ввода")
@@ -547,7 +550,7 @@ func probeQEMUSpawn() (bool, string) {
 	return true, ""
 }
 
-// probeVPCSSpawn exercises the same credentials and controlling-PTY setup as
+// probeVPCSSpawn exercises the same credentials and PTY file descriptors as
 // StartVPCS, without spawning a simulator or touching network interfaces.
 // This catches missing CAP_SETGID / CAP_SETUID in the systemd service early.
 func probeVPCSSpawn() (bool, string) {
@@ -569,7 +572,7 @@ func probeVPCSSpawn() (bool, string) {
 	// /usr/bin/true gives a harmless child exec path with the same SysProcAttr
 	// that the VPCS binary will receive. No guest is started.
 	cmd := exec.CommandContext(ctx, "/usr/bin/true")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred, Setsid: true, Setctty: true, Ctty: 0}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred, Setpgid: true}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
 	if err := cmd.Run(); err != nil {
 		return false, fmt.Sprintf("смена пользователя или создание PTY: %v; проверьте CAP_SETUID и CAP_SETGID в netlab.service", err)

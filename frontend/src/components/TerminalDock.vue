@@ -10,7 +10,7 @@ const props = defineProps<{theme: 'light' | 'dark'}>()
 interface Session {
   id:string; lab:string; node:string; name:string; term:XTerm; fit:FitAddon;
   host:HTMLDivElement; abort:AbortController; cursor:number; decoder:TextDecoder;
-  status:'connecting'|'online'|'offline'; pending:Promise<void>
+  status:'connecting'|'online'|'offline'|'stopped'; pending:Promise<void>; stopped:boolean
 }
 const sessions=ref<Session[]>([])
 const current=ref<string|null>(null)
@@ -27,17 +27,32 @@ let resize:ResizeObserver|null=null
 let dragging:{x:number;y:number;left:number;top:number}|null=null
 function authPath(s:Session){return `/api/labs/${encodeURIComponent(s.lab)}/nodes/${encodeURIComponent(s.node)}`}
 function send(s:Session, data:string){
+  if(s.stopped){s.term.write('\r\n[NetLab] Устройство остановлено. Запустите его и откройте консоль заново.\r\n');return}
   s.pending=s.pending.then(async()=>{
     const response=await fetch(`${authPath(s)}/console`,{method:'POST',headers:{Authorization:`Bearer ${store.token}`,'Content-Type':'application/json'},body:JSON.stringify({text:data})})
-    if(!response.ok)throw Error(`HTTP ${response.status}`)
-  }).catch(e=>{s.status='offline';s.term.write(`\r\n[NetLab] Ошибка отправки: ${(e as Error).message}\r\n`)})
+    if(response.status===409){s.stopped=true;s.status='stopped';throw Error('Устройство остановлено или сервер NetLab перезапущен')}
+    if(!response.ok){
+      const detail=await response.json().catch(()=>null) as {error?:string}|null
+      throw Error(detail?.error||`HTTP ${response.status}`)
+    }
+  }).catch(e=>{
+    if(s.abort.signal.aborted)return
+    if(s.stopped){s.term.write(`\r\n[NetLab] ${(e as Error).message}. Запустите устройство и откройте консоль снова.\r\n`);return}
+    s.status='offline';s.term.write(`\r\n[NetLab] Ошибка отправки: ${(e as Error).message}\r\n`)
+  })
 }
 async function stream(s:Session){
   let delay=700
-  while(!s.abort.signal.aborted){
+  while(!s.abort.signal.aborted&&!s.stopped){
     try{
       s.status='connecting'
       const response=await fetch(`${authPath(s)}/console/stream?cursor=${s.cursor}`,{signal:s.abort.signal,headers:{Authorization:`Bearer ${store.token}`}})
+      if(response.status===409){
+        s.stopped=true;s.status='stopped'
+        const detail=await response.json().catch(()=>null) as {error?:string}|null
+        s.term.write(`\r\n[NetLab] ${detail?.error||'Устройство не запущено'}. Запустите устройство и откройте консоль заново.\r\n`)
+        break
+      }
       if(!response.ok||!response.body)throw Error(`HTTP ${response.status}`)
       s.status='online'; delay=700
       const reader=response.body.getReader(),decoder=new TextDecoder()
@@ -51,7 +66,7 @@ async function stream(s:Session){
         while((pos=buffer.indexOf('\n\n'))>=0){
           const event=buffer.slice(0,pos);buffer=buffer.slice(pos+2)
           const kind=event.match(/^event:\s*(.+)$/m)?.[1]
-          if(kind==='closed')throw Error('Устройство остановлено')
+          if(kind==='closed'){s.stopped=true;s.status='stopped';s.term.write('\r\n[NetLab] Устройство остановлено. Запустите его заново.\r\n');break}
           if(kind!=='output')continue
           const raw=event.match(/^data:\s*(.+)$/m)?.[1];if(!raw)continue
           const item=JSON.parse(raw) as {chunk:string;cursor:number;reset?:boolean}
@@ -59,20 +74,23 @@ async function stream(s:Session){
           s.cursor=item.cursor
           if(item.chunk){const bytes=Uint8Array.from(atob(item.chunk),c=>c.charCodeAt(0));s.term.write(s.decoder.decode(bytes,{stream:true}))}
         }
+        if(s.stopped)break
       }
-    }catch(error){if(s.abort.signal.aborted)break;s.status='offline';s.term.write(`\r\n[NetLab] ${String((error as Error).message)}. Переподключение…\r\n`)}
+    }catch(error){if(s.abort.signal.aborted||s.stopped)break;s.status='offline';s.term.write(`\r\n[NetLab] ${String((error as Error).message)}. Переподключение…\r\n`)}
+    if(s.stopped||s.abort.signal.aborted)break
     await new Promise(resolve=>setTimeout(resolve,delay));delay=Math.min(8000,delay*1.7)
   }
 }
 async function open(device:Device){
   if(!store.activeLab)return
   const id=`${store.activeLab.id}:${device.id}`
-  if(sessions.value.some(s=>s.id===id)){select(id);return}
+  const existing=sessions.value.find(s=>s.id===id)
+  if(existing){if(existing.stopped){close(id)}else{select(id);return}}
   if(sessions.value.length>=12)return
   const term=new XTerm({cursorBlink:true,convertEol:false,scrollback:7000,theme:palette(dark.value),fontSize:13,fontFamily:'Consolas, "Cascadia Code", monospace'})
   const fit=new FitAddon();term.loadAddon(fit)
   const host=document.createElement('div');host.className='terminal-instance';host.style.display='none'
-  const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve()}
+  const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve(),stopped:false}
   sessions.value.push(s);current.value=id;minimized.value=false
   await nextTick()
   dock.value?.querySelector('.terminal-hosts')?.appendChild(host)
@@ -105,7 +123,7 @@ defineExpose({open})
     <template v-if="!minimized">
       <nav class="term-tabs"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @click="select(s.id)"><i :class="s.status"/>{{s.name}}</button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
       <div class="terminal-hosts"></div>
-      <footer class="term-footer"><span>{{active?.status==='online'?'Соединение активно':'Подключение / ожидание API'}}</span><button @click="active&&select(active.id)"><RefreshCcw :size="13"/> Обновить отображение</button></footer>
+      <footer class="term-footer"><span>{{active?.status==='online'?'Соединение активно':active?.status==='stopped'?'Устройство остановлено':'Подключение / ожидание API'}}</span><button @click="active&&select(active.id)"><RefreshCcw :size="13"/> Обновить отображение</button></footer>
     </template>
     <button v-else class="restore-console" @click="minimized=false">{{sessions.length}} вкладок · Развернуть</button>
   </div>

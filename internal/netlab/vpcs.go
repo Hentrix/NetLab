@@ -102,7 +102,9 @@ func (e *Engine) StartVPCS(l Lab, n Node) error {
 	// require acquiring it as a *controlling* terminal. TIOCSCTTY can fail with
 	// EPERM under a systemd service even when changing to netlab-vm succeeds.
 	// Keep the unprivileged UID/GID and supplementary group isolation intact.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
+	// A separate process group prevents interactive VPCS terminal signals from
+	// being delivered to the NetLab API daemon's process group.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred, Setpgid: true}
 	cmd.Stdin = slave
 	cmd.Stdout = slave
 	cmd.Stderr = slave
