@@ -220,3 +220,9 @@
 .icon-category-row button,.icon-load-more{background:var(--surface-2);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:6px 9px;cursor:pointer}
 .icon-category-row button.active{border-color:var(--accent);background:var(--accent-soft)}
 .icon-result-count{color:var(--muted)}.icon-load-more{align-self:center;margin-top:8px}
+
+/* Parity: collapsible inspector and visual drop affordance. */
+.workspace .inspector.inspector-collapsed{width:40px;min-width:40px;padding:6px}
+.inspector-collapse-control{border:1px solid var(--border);border-radius:6px;color:var(--muted);background:var(--surface-2);padding:4px 8px;margin:4px;float:right}
+.device-entry[draggable="true"]{cursor:grab}
+.canvas-scale button{min-width:28px}

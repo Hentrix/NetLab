@@ -14,10 +14,63 @@ import { resizeAnnotation, clampAnnotationPosition, type ResizeSide, type Annota
 
 const store = useNetlabStore()
 type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'|'log'
-const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'add-at',position:{x:number;y:number}):void; (e:'bulk', ids:string[]):void; (e:'device-action', payload:{id:string;action:DeviceContextAction}):void }>()
-const { fitView, zoomIn, zoomOut, updateNodeInternals, viewport, screenToFlowCoordinate } = useVueFlow({ id:'netlab-topology' })
+const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'add-at',position:{x:number;y:number}):void; (e:'bulk', ids:string[]):void; (e:'device-action', payload:{id:string;action:DeviceContextAction}):void; (e:'delete-selection',ids:string[]):void; (e:'template-at',payload:{templateID:string;x:number;y:number}):void }>()
+const { fitView, zoomIn, zoomOut, setViewport, updateNodeInternals, viewport, screenToFlowCoordinate } = useVueFlow({ id:'netlab-topology' })
 const canvasElement=ref<HTMLElement|null>(null)
 const panMode = ref(false)
+const drawingMode=ref<'select'|'marquee'|'text'|'note'>('select')
+const spacePan=ref(false)
+function setCanvasMode(mode:'select'|'pan'|'cable'|'marquee'|'text'|'note'){
+  panMode.value=mode==='pan'
+  cableMode.value=mode==='cable'
+  drawingMode.value=mode==='marquee'?'marquee':mode==='text'?'text':mode==='note'?'note':'select'
+  firstCableNode.value=null
+}
+function resetZoom(){void setViewport({x:0,y:0,zoom:1},{duration:150})}
+function ignoreEditorKey(event:KeyboardEvent){
+  const el=event.target as HTMLElement|null
+  if(!el||event.ctrlKey||event.metaKey||event.altKey)return true
+  if(el.closest('input,textarea,select,[contenteditable="true"],.dialog-overlay,.term-dock'))return true
+  if(document.querySelector('.dialog-overlay'))return true
+  return !store.activeLab
+}
+function paneDoubleClick(event:MouseEvent){
+  if(panMode.value||cableMode.value)return
+  const point=screenToFlowCoordinate({x:event.clientX,y:event.clientY})
+  emit('add-at',{x:Math.round(point.x),y:Math.round(point.y)})
+}
+function paneClickAt(event:MouseEvent){
+  if(drawingMode.value==='text'||drawingMode.value==='note'){
+    newAnnotation(drawingMode.value,screenToFlowCoordinate({x:event.clientX,y:event.clientY}))
+    drawingMode.value='select'
+  }
+  canvasClick()
+}
+function onCanvasDragOver(event:DragEvent){
+  if(!current.value||panMode.value)return
+  if(event.dataTransfer?.types.includes('application/x-netlab-node')||event.dataTransfer?.types.includes('application/x-netlab-template')){
+    event.preventDefault()
+    if(event.dataTransfer)event.dataTransfer.dropEffect='move'
+  }
+}
+async function onCanvasDrop(event:DragEvent){
+  const payload=event.dataTransfer
+  if(!payload||!current.value||panMode.value)return
+  const nodeID=payload.getData('application/x-netlab-node')
+  const templateID=payload.getData('application/x-netlab-template')
+  if(!nodeID&&!templateID)return
+  event.preventDefault()
+  const position=screenToFlowCoordinate({x:event.clientX,y:event.clientY})
+  const x=Math.round(position.x),y=Math.round(position.y)
+  if(nodeID){
+    const device=current.value.nodes.find(n=>n.id===nodeID)
+    if(device)try{await store.moveNode(nodeID,x,y)}catch(error){store.failure=(error as Error).message}
+  }else{
+    emit('add-at',{x,y})
+    // App receives and selects the exact dropped template separately.
+    if(templateID)emit('template-at',{templateID,x,y})
+  }
+}
 const cableMode = ref(false)
 const firstCableNode = ref<string | null>(null)
 const pending = ref<{a:string;b:string} | null>(null)
@@ -225,10 +278,37 @@ async function resizeFinish(event:PointerEvent){
   catch(e){store.failure=(e as Error).message}
 }
 function onKeyboard(event:KeyboardEvent){
-  if(event.key==='Escape'){dismissContextMenu();closeDeviceContext();closeCanvasContext();if(resizeState.value)resizeCancel()}
+  if(event.key==='Escape'){
+    dismissContextMenu();closeDeviceContext();closeCanvasContext()
+    if(resizeState.value)resizeCancel()
+    setCanvasMode('select')
+    return
+  }
+  if(ignoreEditorKey(event)||event.repeat)return
+  if(event.code==='Space'){
+    if(!spacePan.value){
+      spacePan.value=true
+      panMode.value=true
+      cableMode.value=false
+      event.preventDefault()
+    }
+    return
+  }
+  const shortcuts:Record<string,'select'|'pan'|'cable'|'marquee'|'text'|'note'>={
+    KeyV:'select',KeyH:'pan',KeyC:'cable',KeyM:'marquee',KeyT:'text',KeyN:'note'
+  }
+  const mode=shortcuts[event.code]
+  if(mode){event.preventDefault();setCanvasMode(mode);return}
+  if(event.code==='Delete'&&selectedDevices.value.length){
+    event.preventDefault()
+    emit('delete-selection',[...selectedDevices.value])
+  }
 }
-onMounted(()=>window.addEventListener('keydown',onKeyboard))
-onBeforeUnmount(()=>{window.removeEventListener('keydown',onKeyboard);resizeCancel()})
+function onKeyRelease(event:KeyboardEvent){
+  if(event.code==='Space'&&spacePan.value){spacePan.value=false;panMode.value=false}
+}
+onMounted(()=>{window.addEventListener('keydown',onKeyboard);window.addEventListener('keyup',onKeyRelease)})
+onBeforeUnmount(()=>{window.removeEventListener('keydown',onKeyboard);window.removeEventListener('keyup',onKeyRelease);resizeCancel()})
 
 const annotationDraft=ref<Omit<Annotation,'id'>>({
   kind:'note',text:'',x:160,y:160,width:220,height:100,
@@ -375,31 +455,37 @@ function picked(event:{node:{id:string}}) {
 }
 function canvasClick(){dismissContextMenu();closeDeviceContext();closeCanvasContext();if(!panMode.value&&!cableMode.value)store.selectedID=null}
 function doubleClick(event:{node:{id:string}}){
-  if(!event.node.id.startsWith('annotation:'))return
-  const annotation=current.value?.annotations?.find(item=>item.id===event.node.id.slice('annotation:'.length))
-  if(annotation)editAnnotation(annotation)
+  if(event.node.id.startsWith('annotation:')){
+    const annotation=current.value?.annotations?.find(item=>item.id===event.node.id.slice('annotation:'.length))
+    if(annotation)editAnnotation(annotation)
+    return
+  }
+  const device=current.value?.nodes.find(node=>node.id===event.node.id)
+  if(device&&device.status==='running')emit('console',device)
+  else if(device)store.failure='Сначала запустите устройство'
 }
 function closeEditor(){editingID.value=null}
 </script>
 <template>
-  <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @click.self="dismissContextMenu();closeDeviceContext();closeCanvasContext()">
+  <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @dragover="onCanvasDragOver" @drop="onCanvasDrop" @click.self="dismissContextMenu();closeDeviceContext();closeCanvasContext()">
     <VueFlow id="netlab-topology" :nodes="nodes" :edges="edges" :nodes-draggable="!panMode" :nodes-connectable="!panMode"
       :elements-selectable="!panMode" :pan-on-drag="panMode" :selection-on-drag="!panMode"
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
-      @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="canvasClick" @pane-context-menu="openPaneContext" @selection-change="selectionChanged">
+      @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="paneClickAt" @pane-double-click="paneDoubleClick" @pane-context-menu="openPaneContext" @selection-change="selectionChanged">
       <Background pattern-color="var(--grid)" :gap="20" :size="1" />
       <template #node-device="data"><DeviceNode :data="data.data" @device-context="openDeviceContext" /></template>
       <template #node-annotation="data"><AnnotationNode :data="data.data" @resize-start="resizeStart" @context="openAnnotationContext" /></template>
       <template #edge-cable="data"><CableEdge v-bind="data" /></template>
     </VueFlow>
     <div class="canvas-tools" role="toolbar" aria-label="Инструменты топологии">
-      <button type="button" :class="{on:!panMode&&!cableMode}" title="Выделение" @click="panMode=false;cableMode=false;firstCableNode=null"><MousePointer2 :size="17"/></button>
-      <button type="button" :class="{on:panMode}" title="Перемещать полотно" @click="panMode=true;cableMode=false;firstCableNode=null"><Hand :size="17"/></button>
-      <button type="button" :class="{on:cableMode}" title="Кабель: нажмите два устройства" @click="cableMode=!cableMode;panMode=false;firstCableNode=null"><CableIcon :size="17"/></button>
+      <button type="button" :class="{on:!panMode&&!cableMode&&drawingMode==='select'}" title="Выделение (V)" @click="setCanvasMode('select')"><MousePointer2 :size="17"/></button>
+      <button type="button" :class="{on:panMode}" title="Перемещать полотно (H или пробел)" @click="setCanvasMode('pan')"><Hand :size="17"/></button>
+      <button type="button" :class="{on:cableMode}" title="Кабель (C): нажмите два устройства" @click="setCanvasMode(cableMode?'select':'cable')"><CableIcon :size="17"/></button>
       <span class="tool-separator" />
       <button type="button" title="Добавить устройство" @click="emit('add')"><Plus :size="18"/></button>
-      <button type="button" title="Добавить текст" @click="newAnnotation('text')"><Type :size="17"/></button>
-      <button type="button" title="Добавить примечание" @click="newAnnotation('note')"><StickyNote :size="17"/></button>
+      <button type="button" :class="{on:drawingMode==='text'}" title="Текст (T): нажмите на полотно" @click="setCanvasMode('text')"><Type :size="17"/></button>
+      <button type="button" :class="{on:drawingMode==='note'}" title="Примечание (N): нажмите на полотно" @click="setCanvasMode('note')"><StickyNote :size="17"/></button>
+      <button type="button" :class="{on:drawingMode==='marquee'}" title="Выделение рамкой (M)" @click="setCanvasMode('marquee')"><MousePointer2 :size="15"/></button>
       <button type="button" title="Показать всю топологию" @click="fitView({padding:.2,duration:250})"><Scan :size="17"/></button>
       <span v-if="selectedDevices.length>1" class="canvas-selection-count">Выбрано: {{selectedDevices.length}}</span>
       <button v-if="selectedDevices.length>1" type="button" title="Действия с выбранными устройствами" @click="bulkSelectedDevices"><MousePointer2 :size="16"/> Действия</button>
@@ -407,6 +493,7 @@ function closeEditor(){editingID.value=null}
     <div class="canvas-scale" aria-label="Масштаб полотна">
       <button type="button" title="Уменьшить" @click="zoomOut({duration:150})"><Minus :size="16"/></button>
       <button type="button" title="Увеличить" @click="zoomIn({duration:150})"><Plus :size="16"/></button>
+      <button type="button" title="Масштаб 100%" @click="resetZoom">100%</button>
       <button type="button" title="Показать всё" @click="fitView({padding:.2,duration:250})"><Maximize :size="16"/></button>
     </div>
     <div v-if="!panMode&&!cableMode" class="canvas-selection-hint">Shift + перетаскивание — выделить рамкой · Ctrl/Cmd + клик — несколько устройств</div>
