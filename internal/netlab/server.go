@@ -159,7 +159,18 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			fail(w, 405, "method not allowed")
 			return
 		}
-		respond(w, 200, []map[string]any{{"id": "generic", "kind": "server", "name": "Generic x86 QEMU", "portStyle": "eth", "ram": 1024, "cpus": 1, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "mikrotik-chr", "kind": "router", "name": "MikroTik CHR", "portStyle": "ether", "ram": 256, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "ide"}, {"id": "cisco-iosv", "kind": "router", "name": "Cisco IOSv", "portStyle": "gi", "ram": 768, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "virtio"}, {"id": "linux", "kind": "pc", "name": "Linux VM", "portStyle": "eth", "ram": 2048, "cpus": 2, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "vpcs", "engine": "vpcs", "kind": "pc", "name": "VPCS", "portStyle": "eth", "ram": 128, "cpus": 1, "nicModel": "e1000", "nicCount": 1, "diskBus": "ide"}})
+		templates:=[]map[string]any{{"id": "generic", "kind": "server", "name": "Generic x86 QEMU", "portStyle": "eth", "ram": 1024, "cpus": 1, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "mikrotik-chr", "kind": "router", "name": "MikroTik CHR", "portStyle": "ether", "ram": 256, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "ide"}, {"id": "cisco-iosv", "kind": "router", "name": "Cisco IOSv", "portStyle": "gi", "ram": 768, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "virtio"}, {"id": "linux", "kind": "pc", "name": "Linux VM", "portStyle": "eth", "ram": 2048, "cpus": 2, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "vpcs", "engine": "vpcs", "kind": "pc", "name": "VPCS", "portStyle": "eth", "ram": 128, "cpus": 1, "nicModel": "e1000", "nicCount": 1, "diskBus": "ide"}}
+		s.store.mu.Lock()
+		for _,profile:=range s.store.State.Catalog {
+			templates=append(templates,map[string]any{
+			"id":profile.ID,"name":profile.Name,"imageId":profile.ImageID,"kind":profile.Kind,"engine":"qemu",
+			"ram":profile.RAM,"cpus":profile.CPUs,"nicModel":profile.NICModel,"nicCount":profile.NICCount,
+			"diskBus":profile.DiskBus,"portStyle":profile.PortStyle,"icon":profile.Icon,
+			"category":profile.Category,"family":profile.Family,"version":profile.Version,
+			})
+		}
+		s.store.mu.Unlock()
+		respond(w,200,templates)
 		return
 	case "images":
 		if len(parts)==2 && parts[1]=="blank" && r.Method==http.MethodPost {
@@ -525,6 +536,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			fail(w, 400, err.Error())
 			return
 		}
+		if err:=s.checkInstaller(req.Template);err!=nil{fail(w,404,err.Error());return}
 		if req.Template.Engine != "vpcs" && findImage(&s.store.State, req.Template.ImageID) == nil {
 			fail(w, 404, "образ не найден")
 			return
@@ -573,6 +585,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			fail(w, 400, err.Error())
 			return
 		}
+		if err := s.checkInstaller(req); err != nil { fail(w,404,err.Error());return }
 		if req.Engine != "vpcs" && findImage(&s.store.State, req.ImageID) == nil {
 			fail(w, 404, "образ не найден")
 			return
@@ -595,6 +608,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 		return
 	}
 	if len(p) == 4 {
+		if r.Method==http.MethodDelete && s.publishing[key(l.ID,node.ID)] {fail(w,409,"идёт публикация диска");return}
 		// Presentation-only edits may be saved while virtual machines are running.
 		// Never replace QEMU settings or image IDs through this endpoint.
 		if r.Method == "PATCH" {
@@ -679,6 +693,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 				fail(w, 400, err.Error())
 				return
 			}
+			if err:=s.checkInstaller(req);err!=nil{fail(w,404,err.Error());return}
 			if req.Engine != "vpcs" && findImage(&s.store.State, req.ImageID) == nil {
 				fail(w, 404, "образ не найден")
 				return
