@@ -207,3 +207,8 @@
 .device-create-dialog{width:min(560px,calc(100vw - 24px));max-height:88vh;overflow:auto}.profile-catalog{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-height:235px;overflow-y:auto;gap:7px}
 .profile-card{display:flex;gap:9px;align-items:center;text-align:left;padding:11px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--ink)}.profile-card.active{border-color:var(--accent);background:var(--accent-soft)}.profile-card span{display:grid;gap:3px;min-width:0}.profile-card strong{font-size:12px}.profile-card small{font-size:10px;color:var(--muted)}
 @media(max-width:650px){.image-library-summary{grid-template-columns:1fr}.image-library-item{flex-wrap:wrap}.image-library-actions{margin-left:auto}.profile-catalog{grid-template-columns:1fr}}
+
+/* Legacy-style contextual actions, anchored inside the Vue topology canvas. */
+.canvas-context-menu{width:230px;max-height:min(390px,calc(100% - 16px));overflow-y:auto}
+.device-log-dialog{width:min(800px,calc(100vw - 24px));max-height:80vh}
+.device-log-dialog pre{min-height:110px;max-height:55vh;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:14px;background:var(--surface-2);color:var(--ink);font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
