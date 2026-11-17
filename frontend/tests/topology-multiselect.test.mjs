@@ -62,6 +62,16 @@ test('sidebar and inspector selection keeps a device outlined after pointer leav
   assert.match(canvas,/selected:isDeviceSelected\(device\.id\)/)
   assert.match(device,/device-selected':data\.selected/)
   assert.match(css,/\.vue-flow__node-device \.device-node\.device-selected/)
-  assert.match(canvas,/store\.selectedID=event\.node\.id/)
+  assert.match(canvas,/store\.selectedID=selected\.includes\(id\)\?id:/)
   assert.match(canvas,/store\.selectedID=null/)
+})
+
+test('Ctrl-click uses the incoming mouse event to toggle membership without Vue Flow clobbering it', () => {
+  assert.match(canvas,/event\.event\.ctrlKey\|\|event\.event\.metaKey/)
+  assert.match(canvas,/nextNodeSelection\(before,id,additive\)/)
+  assert.match(canvas,/if\(!selectingArea\.value\|\|panMode\.value\|\|cableMode\.value\)return/)
+  assert.match(canvas,/@selection-start="selectingArea=true"/)
+  assert.match(canvas,/@selection-end="selectingArea=false"/)
+  assert.match(canvas,/watch\(\(\)=>store\.selectedID,id=>/)
+  assert.match(canvas,/flush:'sync'/)
 })

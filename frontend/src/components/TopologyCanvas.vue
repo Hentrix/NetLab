@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiSelect from '@/components/UiSelect.vue'
 import { computed, nextTick, ref, watch, onBeforeUnmount, onMounted } from 'vue'
-import { VueFlow, useVueFlow, type Connection } from '@vue-flow/core'
+import { VueFlow, useVueFlow, type Connection, type NodeMouseEvent } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { MousePointer2, Hand, Scan, Cable as CableIcon, Maximize, Plus, Minus, MonitorPlay, Trash2, X, StickyNote, Type, Play, Square } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
@@ -12,6 +12,7 @@ import CableEdge from './CableEdge.vue'
 import AnnotationNode from './AnnotationNode.vue'
 import type { Device, Annotation } from '@/types'
 import { resizeAnnotation, clampAnnotationPosition, type ResizeSide, type AnnotationRect } from '@/topology/annotation-geometry'
+import { nextNodeSelection } from '@/topology/node-selection'
 
 const store = useNetlabStore()
 type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'|'log'
@@ -185,10 +186,24 @@ const selectedDevices=computed(()=>{
   return [...ids]
 })
 const movingGroup=ref(false)
+const selectingArea=ref(false)
+let selectingWithMouse=false
+// Vue Flow emits selection-change also while handling Ctrl-click. Those events
+// can contain a partially updated selection and would overwrite our own toggle.
+// Only accept them while the user is actively drawing a selection rectangle.
 function selectionChanged(event:{nodes:Array<{id:string}>}){
-  if(panMode.value||cableMode.value){selectedOnCanvas.value=[];return}
+  if(!selectingArea.value||panMode.value||cableMode.value)return
   selectedOnCanvas.value=event.nodes.map(node=>node.id)
+  const primary=event.nodes.find(node=>current.value?.nodes.some(device=>device.id===node.id))
+  selectingWithMouse=true
+  store.selectedID=primary?.id||null
+  selectingWithMouse=false
 }
+// A click in the sidebar or inspector is a new single selection, not an
+// extension of whatever was selected previously on the topology.
+watch(()=>store.selectedID,id=>{
+  if(!selectingWithMouse)selectedOnCanvas.value=id?[id]:[]
+},{flush:'sync'})
 function bulkSelectedDevices(){
   if(selectedDevices.value.length)emit('bulk', [...selectedDevices.value])
 }
@@ -590,17 +605,38 @@ async function dragStopped(event:{node:{id:string;position:{x:number;y:number}};
     await store.moveTopologyItems(dragged.map(node=>({id:node.id,x:node.position.x,y:node.position.y})))
   }finally{movingGroup.value=false}
 }
-function picked(event:{node:{id:string}}) {
+function picked(event:NodeMouseEvent) {
   if(panMode.value)return
-  if(event.node.id.startsWith('annotation:')){store.selectedID=null;return}
+  const id=event.node.id
   if(cableMode.value) {
-    if(!firstCableNode.value) firstCableNode.value=event.node.id
-    else if(firstCableNode.value!==event.node.id) chooseEnds(firstCableNode.value,event.node.id)
+    if(id.startsWith('annotation:'))return
+    if(!firstCableNode.value)firstCableNode.value=id
+    else if(firstCableNode.value!==id)chooseEnds(firstCableNode.value,id)
     return
   }
-  store.selectedID=event.node.id
+  const additive=event.event.ctrlKey||event.event.metaKey
+  // The input must include the inspector's currently selected device as well
+  // as the canvas selection; otherwise the second Ctrl-click loses the first.
+  const before=[...selectedOnCanvas.value]
+  if(store.selectedID&&!before.includes(store.selectedID))before.push(store.selectedID)
+  const selected=nextNodeSelection(before,id,additive)
+  selectingWithMouse=true
+  selectedOnCanvas.value=selected
+  if(id.startsWith('annotation:')){
+    if(!additive)store.selectedID=null
+  }else{
+    store.selectedID=selected.includes(id)?id:
+      (selected.find(nodeId=>current.value?.nodes.some(node=>node.id===nodeId))||null)
+  }
+  selectingWithMouse=false
 }
-function canvasClick(){dismissContextMenu();closeDeviceContext();closeCanvasContext();if(!panMode.value&&!cableMode.value)store.selectedID=null}
+function canvasClick(){
+  dismissContextMenu();closeDeviceContext();closeCanvasContext()
+  if(!panMode.value&&!cableMode.value){
+    selectedOnCanvas.value=[]
+    store.selectedID=null
+  }
+}
 function doubleClick(event:{node:{id:string}}){
   if(event.node.id.startsWith('annotation:')){
     const annotation=current.value?.annotations?.find(item=>item.id===event.node.id.slice('annotation:'.length))
@@ -619,7 +655,7 @@ function closeEditor(){editingID.value=null}
        :elements-selectable="!panMode" :pan-on-drag="panMode ? [0,1] : [1]" :selection-on-drag="!panMode"
       :multi-selection-key-code="['Control','Meta']"
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
-      @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="paneClickAt" @pane-double-click="paneDoubleClick" @pane-context-menu="openPaneContext" @selection-change="selectionChanged">
+      @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="paneClickAt" @pane-double-click="paneDoubleClick" @pane-context-menu="openPaneContext" @selection-start="selectingArea=true" @selection-end="selectingArea=false" @selection-change="selectionChanged">
       <Background pattern-color="var(--grid)" :gap="20" :size="1" />
       <template #node-device="data"><DeviceNode :data="data.data" @device-context="openDeviceContext" @device-hover="hoverDevice"/></template>
       <template #node-annotation="data"><AnnotationNode :data="data.data" @resize-start="resizeStart" @context="openAnnotationContext" /></template>
