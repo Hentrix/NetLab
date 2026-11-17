@@ -78,6 +78,9 @@ export const useNetlabStore = defineStore('netlab', () => {
   async function nodePower(id: string, operation: 'start' | 'stop') {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/nodes/${id}/${operation}`,{method:'POST'})); await refresh()
   }
+  async function updateNode(id: string, payload: Pick<Partial<Device>, "icon" | "portStyle" | "ports">) {
+    await action(()=>api<Device>(token.value,`labs/${current().id}/nodes/${id}`,{method:"PATCH",body:json(payload)})); await refresh()
+  }
   async function renameNode(id: string, name: string) {
     const lab = current()
     await action(()=>api<Device>(token.value,`labs/${lab.id}/nodes/${id}`,{method:'PATCH',body:json({name})})); await refresh()
@@ -100,5 +103,5 @@ export const useNetlabStore = defineStore('netlab', () => {
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,busy,failure,live,activeLab,selectedNode,
     authenticate,logout,refresh,refreshSystem,bootstrap,createLab,renameLab,addNode,moveNode,nodePower,renameNode,
-    removeNode,connect,disconnect,updateCable,labPower}
+    removeNode,updateNode,connect,disconnect,updateCable,labPower}
 })

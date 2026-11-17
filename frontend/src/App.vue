@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { LayoutDashboard, HardDrive, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, Github, Pencil, LogOut, X, ChevronDown } from 'lucide-vue-next'
 import { useNetlabStore } from '@/stores/netlab'
 import { portLabel } from '@/api/client'
-import type { Device, Template } from '@/types'
+import type { Device, Template, PortSpec } from '@/types'
 import TopologyCanvas from '@/components/TopologyCanvas.vue'
 import SystemOverview from '@/components/SystemOverview.vue'
 import { exportTopology } from '@/topology/snapshot'
@@ -18,6 +18,13 @@ const templateID=ref('vpcs');const imageID=ref('');const deviceName=ref('');cons
 const inFlight=ref(false)
 const search=ref('')
 const selectedTab=ref<'overview'|'ports'>('overview')
+const portEditorOpen=ref(false)
+const portEditorDevice=ref('')
+const portDraft=ref<PortSpec[]>([])
+const portStyleDraft=ref('eth')
+const portSaving=ref(false)
+const portStyles=[{value:'eth',name:'eth0, eth1'},{value:'ether',name:'ether1, ether2'},{value:'gi',name:'Gi0/0, Gi0/1'},{value:'fa',name:'Fa0/0, Fa0/1'},{value:'ge',name:'GE0, GE1'},{value:'ens',name:'ens0, ens1'}]
+const speeds=[0,10,100,1000,10000,25000,40000,100000]
 const terminal=ref<InstanceType<typeof TerminalDock>|null>(null)
 const selectedTemplate=computed(()=>store.templates.find(t=>t.id===templateID.value))
 const filteredNodes=computed(()=>store.activeLab?.nodes.filter(n=>n.name.toLowerCase().includes(search.value.toLowerCase()))||[])
@@ -52,6 +59,23 @@ async function addDevice(){
 async function powerNode(device:Device,op:'start'|'stop'){await store.nodePower(device.id,op)}
 async function deleteNode(device:Device){if(!window.confirm(`Удалить ${device.name} и его соединения?`))return;await store.removeNode(device.id)}
 async function rename(device:Device){const name=window.prompt('Название устройства',device.name);if(name?.trim()&&name!==device.name)await store.renameNode(device.id,name.trim())}
+function editPorts(device:Device){
+  portEditorDevice.value=device.id
+  portStyleDraft.value=device.portStyle||'eth'
+  portDraft.value=Array.from({length:device.nicCount||16},(_,i)=>({
+    name:device.ports?.[i]?.name||'',
+    speedMbps:device.ports?.[i]?.speedMbps||0
+  }))
+  portEditorOpen.value=true
+}
+async function savePorts(){
+  if(!portEditorDevice.value||portSaving.value)return
+  portSaving.value=true
+  try{
+    await store.updateNode(portEditorDevice.value,{portStyle:portStyleDraft.value,ports:portDraft.value})
+    portEditorOpen.value=false
+  }finally{portSaving.value=false}
+}
 async function removeCable(id:string){if(window.confirm('Отключить Ethernet-кабель?'))await store.disconnect(id)}
 async function powerLab(op:'start'|'stop'){await store.labPower(op)}
 function kindIcon(kind?:string){return kind==='pc'?'pc':kind==='firewall'?'shield':kind==='server'?'server':'router'}
@@ -92,7 +116,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
           <TopologyCanvas @console="consoleOpen" @add="openAdd" />
           <aside class="inspector"><template v-if="store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
             <template v-if="selectedTab==='overview'"><div class="inspector-content"><label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong><label>vCPU / RAM</label><strong>{{store.selectedNode.engine==='vpcs'?'—':`${store.selectedNode.cpus||1} / ${store.selectedNode.ram||256} МБ`}}</strong><label>Интерфейсы</label><strong>{{store.selectedNode.nicCount||16}}</strong></div><div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
-            <template v-else><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{cable.aPort}} ↔ {{cable.bPort}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
+            <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{cable.aPort}} ↔ {{cable.bPort}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
           </template><div v-else class="inspector-empty">Выберите устройство<br/>на топологии</div></aside>
         </div>
         <div v-else class="empty-panel"><Router :size="38"/><h2>Создайте лабораторию</h2><p>Устройства, кабели и настройки будут сохранены на Debian-сервере.</p><button class="primary" @click="createLabOpen=true"><Plus :size="16"/> Новая лаборатория</button></div>
@@ -104,6 +128,21 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
     </main>
     <TerminalDock ref="terminal" :theme="theme" />
     <div v-if="createLabOpen" class="dialog-overlay" @click.self="createLabOpen=false"><form class="dialog-card" @submit.prevent="submitLab"><h2>Новая лаборатория</h2><label>Название<input v-model="newLab" required maxlength="80" autofocus/></label><div class="dialog-actions"><button type="button" @click="createLabOpen=false">Отмена</button><button class="primary">Создать</button></div></form></div>
+    <div v-if="portEditorOpen" class="dialog-overlay" @click.self="portEditorOpen=false">
+      <form class="dialog-card port-editor-dialog" @submit.prevent="savePorts">
+        <h2>Настройка интерфейсов</h2>
+        <p>Имена и номинальные скорости — подписи топологии, они не меняют скорость сетевой карты QEMU.</p>
+        <label>Стиль портов<select v-model="portStyleDraft"><option v-for="style in portStyles" :key="style.value" :value="style.value">{{style.name}}</option></select></label>
+        <div class="port-editor-grid">
+          <div v-for="(port,i) in portDraft" :key="i" class="port-editor-row">
+            <strong>№ {{i+1}}</strong>
+            <label>Имя<input v-model.trim="port.name" maxlength="32" :placeholder="'Имя по стилю '+portStyleDraft"/></label>
+            <label>Скорость<select v-model.number="port.speedMbps"><option v-for="speed in speeds" :key="speed" :value="speed">{{speed===0?'Не задана':speed+' Мбит/с'}}</option></select></label>
+          </div>
+        </div>
+        <div class="dialog-actions"><button type="button" @click="portEditorOpen=false">Отмена</button><button class="primary" :disabled="portSaving">Сохранить</button></div>
+      </form>
+    </div>
     <div v-if="addOpen" class="dialog-overlay" @click.self="addOpen=false"><form class="dialog-card" @submit.prevent="addDevice"><h2>Добавить устройство</h2><label>Профиль<select v-model="templateID" @change="changeTemplate"><option v-for="t in store.templates" :key="t.id" :value="t.id">{{t.name}}</option></select></label><label>Название<input v-model="deviceName" required /></label><template v-if="selectedTemplate?.engine!=='vpcs'"><label>Образ<select v-model="imageID" required><option v-for="i in store.images" :key="i.id" :value="i.id">{{i.name}}</option></select></label><label>Число Ethernet-портов<input v-model.number="nicCount" type="number" min="1" max="32"/></label></template><p v-else>VPCS не требует образа диска. Доступен один порт eth0.</p><div class="dialog-actions"><button type="button" @click="addOpen=false">Отмена</button><button class="primary" :disabled="inFlight||(selectedTemplate?.engine!=='vpcs'&&!imageID)">Добавить</button></div></form></div>
   </div>
 </template>

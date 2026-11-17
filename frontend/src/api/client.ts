@@ -23,6 +23,7 @@ export async function api<T>(token: string, path: string, options: RequestInit =
 export function json(data: unknown): string { return JSON.stringify(data) }
 export function portLabel(device: Device | undefined, index: number): string {
   if (!device) return `eth${index}`
+  if (device.ports?.[index]?.name) return device.ports[index].name!
   const style = device.portStyle || (device.engine === 'vpcs' ? 'eth' : 'eth')
   if (style === 'ether') return `ether${index + 1}`
   if (style === 'gi') return `Gi0/${index}`

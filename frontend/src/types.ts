@@ -3,9 +3,10 @@ export type DeviceKind = 'router' | 'switch' | 'pc' | 'firewall' | 'server' | st
 export interface Device {
   id: string; name: string; imageId?: string; icon?: string
   engine?: 'vpcs' | 'qemu'; kind?: DeviceKind; status?: DeviceStatus
-  x: number; y: number; nicCount?: number; portStyle?: string; error?: string
+  x: number; y: number; nicCount?: number; portStyle?: string; ports?: PortSpec[]; error?: string
   ram?: number; cpus?: number; nicModel?: string; diskBus?: string
 }
+export interface PortSpec { name?: string; speedMbps?: number }
 export interface Cable {
   id: string; a: string; b: string; aPort: number; bPort: number
   color?: string; lineWidth?: number; lineStyle?: 'solid' | 'dashed' | 'dotted'
