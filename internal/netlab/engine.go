@@ -603,8 +603,12 @@ func (e *Engine) RecoverChecked(labs []Lab) error {
    if n.Engine=="vpcs"||!validID(l.ID)||!validID(n.ID) {continue}
    qmp:=filepath.Join(e.data,"runtime",l.ID,n.ID,"monitor.sock")
    if _,err:=os.Lstat(qmp);err==nil {
-    if err:=qmpCommand(qmp,"query-status",nil);err==nil {
-     problems=append(problems,fmt.Sprintf("лаборатория %s: QEMU %s всё ещё работает; сеть сохранена, остановите старый процесс перед восстановлением",l.Name,n.Name))
+    // A successful connect is sufficient evidence of a live QEMU. Do not
+    // require a completed QMP handshake during VM startup or shutdown.
+    conn,dialErr:=net.DialTimeout("unix",qmp,300*time.Millisecond)
+    if conn!=nil {_=conn.Close()}
+    if dialErr==nil || errors.Is(dialErr,syscall.EACCES) || errors.Is(dialErr,syscall.EPERM) {
+     problems=append(problems,fmt.Sprintf("лаборатория %s: QEMU %s ещё использует QMP; сеть сохранена, остановите старый процесс перед восстановлением",l.Name,n.Name))
      active=true
      break
     }
