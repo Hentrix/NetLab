@@ -127,3 +127,28 @@ func (s *Server) workshopAPI(w http.ResponseWriter,r *http.Request,p []string){
  }
  respond(w,201,img)
 }
+
+func (s *Server) catalogTemplates() []map[string]any {
+ result:=[]map[string]any{
+  {"id":"generic","kind":"server","name":"Generic x86 QEMU","portStyle":"eth","ram":1024,"cpus":1,"nicModel":"virtio-net-pci","nicCount":4,"diskBus":"virtio"},
+  {"id":"mikrotik-chr","kind":"router","name":"MikroTik CHR","portStyle":"ether","ram":256,"cpus":1,"nicModel":"e1000","nicCount":4,"diskBus":"ide"},
+  {"id":"cisco-iosv","kind":"router","name":"Cisco IOSv","portStyle":"gi","ram":768,"cpus":1,"nicModel":"e1000","nicCount":4,"diskBus":"virtio"},
+  {"id":"linux","kind":"pc","name":"Linux VM","portStyle":"eth","ram":2048,"cpus":2,"nicModel":"virtio-net-pci","nicCount":4,"diskBus":"virtio"},
+  {"id":"vpcs","engine":"vpcs","kind":"pc","name":"VPCS","portStyle":"eth","ram":128,"cpus":1,"nicModel":"e1000","nicCount":1,"diskBus":"ide"},
+ }
+ s.store.mu.Lock()
+ defer s.store.mu.Unlock()
+ for _,img:=range s.store.State.Images {
+  if !img.Published || img.isISO() || img.Draft {continue}
+  kind:="server"
+  switch img.Category {case "desktop":kind="pc";case "router","switch","firewall":kind=img.Category}
+  name:=strings.TrimSpace(strings.TrimSpace(img.Family+" "+img.Version))
+  if name=="" {name=img.Name}
+  result=append(result,map[string]any{
+    "id":"image:"+img.ID,"name":name,"engine":"qemu","kind":kind,
+    "imageId":img.ID,"category":img.Category,"family":img.Family,"version":img.Version,
+    "ram":2048,"cpus":2,"nicCount":2,"nicModel":"e1000","diskBus":"ide","portStyle":"eth",
+  })
+ }
+ return result
+}
