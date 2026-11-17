@@ -115,3 +115,43 @@ test('switching between two VPCS console tabs preserves keyboard input focus',as
   await expect.poll(()=>state.inputs.filter(i=>i.path.includes('/pc1/')).map(i=>i.text).join('')).toContain('abc123')
   await expect.poll(()=>state.inputs.filter(i=>i.path.includes('/pc2/')).map(i=>i.text).join('')).toContain('xyz')
 })
+
+test('image workshop displays ISO preparation and publish workflow',async({page})=>{
+  await mockNetLab(page)
+  await openLab(page)
+  await page.getByRole('button',{name:/Мастерская образов/}).click()
+  await expect(page.getByText('1. Установочный ISO')).toBeVisible()
+  await expect(page.getByText('2. Создать установочную VM')).toBeVisible()
+  await expect(page.getByText('3. Опубликовать установленную ОС')).toBeVisible()
+  await expect(page.getByText('Каталог подготовленных систем')).toBeVisible()
+})
+test('QEMU graphics opens noVNC through a short-lived same-origin ticket',async({page})=>{
+  const state=await mockNetLab(page)
+  state.lab.nodes[0].engine='qemu'
+  await page.route('**/api/labs/lab1/nodes/pc1/vnc-ticket',route=>
+    route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ticket:'ephemeral',wsPath:'/vnc/ephemeral'})}))
+  await page.route('**/novnc/core/rfb.js',route=>
+    route.fulfill({status:200,contentType:'application/javascript',body:`
+      export default class RFB {
+        constructor(target,url){
+          window.__netlabTestVNCURL=url;
+          const el=document.createElement('span');el.textContent='Гостевой экран';target.append(el)
+        }
+        set scaleViewport(value) {}
+        set resizeSession(value) {}
+        addEventListener() {}
+        disconnect() {}
+        sendCtrlAltDel() {}
+      }
+    `}))
+  await openLab(page)
+  await page.locator('.device-entry').filter({hasText:'PC1'}).click()
+  await page.getByRole('button',{name:/Экран \(VNC\)/}).click()
+  await expect(page.locator('.graphics-dialog')).toBeVisible()
+  await expect(page.getByText('Гостевой экран')).toBeVisible()
+  const url=await page.evaluate(()=>window.__netlabTestVNCURL)
+  expect(url).toMatch(/\/vnc\/ephemeral$/)
+  expect(url).not.toContain('test-local-token')
+  await page.locator('.graphics-controls').getByRole('button',{name:'Закрыть'}).click()
+  await expect(page.locator('.graphics-dialog')).toHaveCount(0)
+})
