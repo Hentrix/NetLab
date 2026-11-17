@@ -12,7 +12,7 @@ test('right click on device opens only its own Vue Flow menu',()=>{
   assert.match(node,/event\.preventDefault\(\)/)
   assert.match(node,/emit\('device-context',\{id:props\.data\.device\.id,event\}\)/)
   assert.match(canvas,/@device-context="openDeviceContext"/)
-  assert.match(canvas,/store\.selectedID=payload\.id/)
+  assert.match(canvas,/store\.selectDeviceGroup\(\[payload\.id\],payload\.id\)/)
   assert.match(canvas,/closeDeviceContext\(\)/)
   assert.match(canvas,/dismissContextMenu\(\)/)
 })
