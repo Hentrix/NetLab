@@ -38,7 +38,7 @@ export const useNetlabStore = defineStore('netlab', () => {
     try { return await fn() } catch (e) { failure.value = (e as Error).message; throw e }
   }
   function authenticate(value: string) { token.value = value.trim(); sessionStorage.setItem('netlabToken', token.value) }
-  function logout() { authenticate(''); labs.value = []; labID.value = null; selectedID.value = null }
+  function logout() { authenticate(''); labs.value = []; labID.value = null; selectedID.value = null; selectedDeviceIDs.value=[] }
   async function refresh() {
     if (!token.value) return
     await action(async () => {
