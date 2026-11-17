@@ -615,12 +615,16 @@ func (e *Engine) RecoverChecked(labs []Lab) error {
    }
   }
   if active {continue}
+  ovsFailed:=false
   for _,ln:=range l.Links {
    if !validID(ln.ID) {continue}
    if err:=e.exec("ovs-vsctl","--if-exists","del-br",bridgeName(ln.ID));err!=nil {
     problems=append(problems,fmt.Sprintf("OVS %s: %v",ln.ID,err))
+    ovsFailed=true
    }
   }
+  // A partially recovered OVS network should remain intact for diagnosis.
+  if ovsFailed {continue}
   for _,n:=range l.Nodes {
    if !validID(n.ID) {continue}
    for port:=0;port<portCapacity(&n);port++ {
