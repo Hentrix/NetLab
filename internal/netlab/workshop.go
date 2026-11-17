@@ -78,6 +78,68 @@ func catalogVersionConflict(images []Image, exceptID, category, family, version 
  return false
 }
 
+// createWorkshopPreparation creates the base disk, lab and QEMU node as one
+// logical operation. A failed state save cannot orphan workshop resources.
+func (s *Server) createWorkshopPreparation(w http.ResponseWriter,r *http.Request){
+ var req struct{
+  Name string `json:"name"`
+  ISOID string `json:"isoId"`
+  Category string `json:"category"`
+  Family string `json:"family"`
+  Version string `json:"version"`
+  SizeGiB int `json:"sizeGiB"`
+  RAM int `json:"ram"`
+  CPUs int `json:"cpus"`
+  NICModel string `json:"nicModel"`
+ }
+ if !decode(w,r,&req){return}
+ if err:=validateImageMetadata(req.Name,req.Category,req.Family,req.Version);err!=nil{fail(w,400,err.Error());return}
+ if strings.TrimSpace(req.Family)==""||strings.TrimSpace(req.Version)==""{fail(w,400,"укажите семейство и версию");return}
+ if req.SizeGiB<4||req.SizeGiB>512{fail(w,400,"размер диска: 4–512 ГиБ");return}
+ if !validID(req.ISOID){fail(w,400,"неверный ISO ID");return}
+ if _,err:=exec.LookPath("qemu-img");err!=nil{fail(w,503,"не установлен qemu-img");return}
+ kind:="server"
+ switch req.Category {case "desktop":kind="pc";case "router","switch","firewall":kind=req.Category}
+ diskID:=newID()
+ img:=Image{ID:diskID,Name:"Заготовка · "+strings.TrimSpace(req.Name),Format:"qcow2",Kind:"disk",Draft:true,
+  Category:req.Category,Family:strings.TrimSpace(req.Family),Version:strings.TrimSpace(req.Version),CreatedAt:time.Now()}
+ node:=Node{ID:newID(),Name:strings.TrimSpace(req.Name),Engine:"qemu",Kind:kind,ImageID:diskID,
+  InstallISOID:req.ISOID,BootOrder:"cdrom",RAM:req.RAM,CPUs:req.CPUs,NICModel:req.NICModel,
+  NICCount:2,DiskBus:"ide",PortStyle:"eth",X:250,Y:180,Status:"stopped"}
+ if err:=validateNode(node);err!=nil{fail(w,400,err.Error());return}
+ lab:=Lab{ID:newID(),Name:"Подготовка · "+strings.TrimSpace(req.Family)+" "+strings.TrimSpace(req.Version),
+  CreatedAt:time.Now(),Nodes:[]Node{node},Links:[]Link{},Annotations:[]Annotation{}}
+ tmp:=filepath.Join(s.data,"images",diskID+".creating")
+ final:=filepath.Join(s.data,"images",diskID+".qcow2")
+ s.store.mu.Lock()
+ defer s.store.mu.Unlock()
+ iso:=findImage(&s.store.State,req.ISOID)
+ if iso==nil||!iso.isISO(){fail(w,404,"ISO установщика не найден");return}
+ if catalogVersionConflict(s.store.State.Images,"",req.Category,req.Family,req.Version){
+  fail(w,409,"такая версия уже опубликована");return
+ }
+ if err:=run("qemu-img","create","-f","qcow2",tmp,fmt.Sprintf("%dG",req.SizeGiB));err!=nil{
+  _=os.Remove(tmp);fail(w,500,"не удалось создать системный диск: "+err.Error());return
+ }
+ if err:=os.Rename(tmp,final);err!=nil{_ = os.Remove(tmp);fail(w,500,err.Error());return}
+ if u,err:=user.Lookup("netlab-vm");err==nil{
+  uid,_:=parseInt(u.Uid);gid,_:=parseInt(u.Gid)
+  if err:=os.Chown(final,uid,gid);err!=nil{_ = os.Remove(final);fail(w,500,err.Error());return}
+ }
+ info,err:=os.Stat(final)
+ if err!=nil{_ = os.Remove(final);fail(w,500,err.Error());return}
+ img.Size=info.Size()
+ s.store.State.Images=append(s.store.State.Images,img)
+ s.store.State.Labs=append(s.store.State.Labs,lab)
+ if err:=s.store.save();err!=nil{
+  s.store.State.Images=s.store.State.Images[:len(s.store.State.Images)-1]
+  s.store.State.Labs=s.store.State.Labs[:len(s.store.State.Labs)-1]
+  _ = os.Remove(final)
+  fail(w,500,err.Error());return
+ }
+ respond(w,201,map[string]any{"image":img,"lab":lab,"node":node})
+}
+
 func (s *Server) createBlankImage(w http.ResponseWriter,r *http.Request){
  var req struct{Name string `json:"name"`; SizeGiB int `json:"sizeGiB"`}
  if !decode(w,r,&req){return}
@@ -191,6 +253,7 @@ func (s *Server) createWorkshopRevision(w http.ResponseWriter,r *http.Request) {
 }
 
 func (s *Server) workshopAPI(w http.ResponseWriter,r *http.Request,p []string){
+ if len(p)==2 && p[1]=="prepare" && r.Method==http.MethodPost {s.createWorkshopPreparation(w,r);return}
  if len(p)==2 && p[1]=="revise" && r.Method==http.MethodPost {s.createWorkshopRevision(w,r);return}
  if len(p)!=2 ||p[1]!="publish" ||r.Method!=http.MethodPost {fail(w,404,"неизвестное действие мастерской");return}
  var req struct{LabID string `json:"labId"`;NodeID string `json:"nodeId"`;Name string `json:"name"`;Category string `json:"category"`;Family string `json:"family"`;Version string `json:"version"`}
