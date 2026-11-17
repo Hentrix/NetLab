@@ -43,6 +43,26 @@ const portEditorDevice=ref('')
 const portDraft=ref<PortSpec[]>([])
 const portStyleDraft=ref('eth')
 const portSaving=ref(false)
+const iconPickerOpen=ref(false)
+const iconDeviceID=ref('')
+const iconSearch=ref('')
+const iconCatalog=ref<string[]>([])
+const iconMatches=computed(()=>iconCatalog.value.filter(icon=>icon.toLowerCase().includes(iconSearch.value.toLowerCase())).slice(0,120))
+async function openIconPicker(device:Device){
+  iconDeviceID.value=device.id;iconSearch.value='';iconPickerOpen.value=true
+  if(!iconCatalog.value.length){
+    try {
+      const response=await fetch('/icons.json',{cache:'force-cache'})
+      if(!response.ok)throw new Error('Не удалось загрузить каталог иконок')
+      const files:unknown=await response.json()
+      if(!Array.isArray(files)||!files.every(file=>typeof file==='string'))throw new Error('Неверный каталог иконок')
+      iconCatalog.value=files as string[]
+    }catch(error){store.failure=(error as Error).message}
+  }
+}
+async function chooseIcon(icon:string){
+  await store.updateNode(iconDeviceID.value,{icon});iconPickerOpen.value=false
+}
 const portStyles=[{value:'eth',name:'eth0, eth1'},{value:'ether',name:'ether1, ether2'},{value:'gi',name:'Gi0/0, Gi0/1'},{value:'fa',name:'Fa0/0, Fa0/1'},{value:'ge',name:'GE0, GE1'},{value:'ens',name:'ens0, ens1'}]
 const speeds=[0,10,100,1000,10000,25000,40000,100000]
 const terminal=ref<InstanceType<typeof TerminalDock>|null>(null)
@@ -135,7 +155,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
           </div></div><button class="add-row" @click="openAdd"><Plus :size="16"/> Добавить устройство</button></aside>
           <TopologyCanvas @console="consoleOpen" @add="openAdd" />
           <aside class="inspector"><template v-if="store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
-            <template v-if="selectedTab==='overview'"><div class="inspector-content"><label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong><label>vCPU / RAM</label><strong>{{store.selectedNode.engine==='vpcs'?'—':`${store.selectedNode.cpus||1} / ${store.selectedNode.ram||256} МБ`}}</strong><label>Интерфейсы</label><strong>{{store.selectedNode.nicCount||16}}</strong></div><div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
+            <template v-if="selectedTab==='overview'"><div class="inspector-content"><label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong><label>vCPU / RAM</label><strong>{{store.selectedNode.engine==='vpcs'?'—':`${store.selectedNode.cpus||1} / ${store.selectedNode.ram||256} МБ`}}</strong><label>Интерфейсы</label><strong>{{store.selectedNode.nicCount||16}}</strong></div><div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
             <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{cable.aPort}} ↔ {{cable.bPort}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
           </template><div v-else class="inspector-empty">Выберите устройство<br/>на топологии</div></aside>
         </div>
@@ -151,6 +171,19 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
     </main>
     <TerminalDock ref="terminal" :theme="theme" />
     <div v-if="createLabOpen" class="dialog-overlay" @click.self="createLabOpen=false"><form class="dialog-card" @submit.prevent="submitLab"><h2>Новая лаборатория</h2><label>Название<input v-model="newLab" required maxlength="80" autofocus/></label><div class="dialog-actions"><button type="button" @click="createLabOpen=false">Отмена</button><button class="primary">Создать</button></div></form></div>
+    <div v-if="iconPickerOpen" class="dialog-overlay" @click.self="iconPickerOpen=false">
+      <div class="dialog-card icon-picker-dialog" role="dialog" aria-label="Каталог иконок">
+        <h2>Выбрать иконку устройства</h2>
+        <input v-model="iconSearch" placeholder="Поиск среди 550 иконок" aria-label="Поиск иконок"/>
+        <div class="icon-picker-list">
+          <button v-for="icon in iconMatches" :key="icon" type="button" @click="chooseIcon(icon)" :title="icon">
+            <img :src="`/icons/${encodeURIComponent(icon)}`" alt=""/><span>{{icon.replace('.png','')}}</span>
+          </button>
+          <p v-if="!iconMatches.length">Иконки не найдены</p>
+        </div>
+        <div class="dialog-actions"><button @click="iconPickerOpen=false">Закрыть</button></div>
+      </div>
+    </div>
     <div v-if="portEditorOpen" class="dialog-overlay" @click.self="portEditorOpen=false">
       <form class="dialog-card port-editor-dialog" @submit.prevent="savePorts">
         <h2>Настройка интерфейсов</h2>
