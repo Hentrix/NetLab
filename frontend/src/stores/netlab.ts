@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api, json } from '@/api/client'
+import { sameTopologyStructure } from '@/topology/status-reconcile'
 import type { Cable, Device, Annotation, ImageRecord, Lab, Template, HostSystem, HostMetrics } from '@/types'
 
 export const useNetlabStore = defineStore('netlab', () => {
@@ -47,6 +48,43 @@ export const useNetlabStore = defineStore('netlab', () => {
       if (selectedID.value && !activeLab.value?.nodes.some(n=>n.id===selectedID.value)) selectedID.value = null
       live.value = true
     }).catch(() => { live.value = false })
+  }
+  let polling=false
+  /** Cheap, best-effort 3.5s tick. Preserve existing reactive node identities
+   * while only statuses change, so Vue Flow does not re-create a drag target.
+   */
+  async function pollActiveLab(){
+    const id=labID.value
+    if(!token.value||!id||polling)return
+    polling=true
+    try{
+      const snapshot=await api<Lab>(token.value,`labs/${id}`)
+      if(labID.value!==id)return // The user switched labs while the request was in flight.
+      const index=labs.value.findIndex(lab=>lab.id===id)
+      if(index<0)return
+      const existing=labs.value[index]
+      if(!sameTopologyStructure(existing,snapshot)){
+        // Remote edits/new nodes require a full update, unlike pure status ticks.
+        labs.value[index]=snapshot
+        const available=new Set(snapshot.nodes.map(node=>node.id))
+        selectedDeviceIDs.value=selectedDeviceIDs.value.filter(nodeId=>available.has(nodeId))
+        if(selectedID.value&&!available.has(selectedID.value))selectedID.value=null
+      }else{
+        for(let i=0;i<existing.nodes.length;i++){
+          const node=existing.nodes[i],remote=snapshot.nodes[i]
+          if(node.status!==remote.status)node.status=remote.status
+          if(node.error!==remote.error)node.error=remote.error
+        }
+        for(let i=0;i<existing.links.length;i++){
+          const cable=existing.links[i],remote=snapshot.links[i]
+          if(cable.status!==remote.status)cable.status=remote.status
+        }
+      }
+      live.value=true
+    }catch{
+      // Do not overwrite a user-visible action error with background polling noise.
+      live.value=false
+    }finally{polling=false}
   }
   async function bootstrap() {
     busy.value = true
@@ -209,6 +247,6 @@ export const useNetlabStore = defineStore('netlab', () => {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,selectedDeviceIDs,selectDeviceGroup,clickDeviceInSidebar,busy,failure,live,activeLab,selectedNode,
-    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,refreshImages,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
+    authenticate,logout,refresh,pollActiveLab,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,refreshImages,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
     removeNode,updateNode,configureQemuNode,bulkNodes,moveTopologyItems,connect,disconnect,updateCable,labPower}
 })
