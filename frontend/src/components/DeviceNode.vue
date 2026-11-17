@@ -7,6 +7,12 @@ import type { PortAnchor, Side } from '@/topology/cable-layout'
 
 interface LinkHandle { linkId: string; end: 'source' | 'target'; anchor: PortAnchor }
 const props = defineProps<{ data: { device: Device; anchors?: LinkHandle[] } }>()
+const emit=defineEmits<{(e:'device-context',payload:{id:string;event:MouseEvent}):void}>()
+function openContext(event:MouseEvent){
+  event.preventDefault()
+  event.stopPropagation()
+  emit('device-context',{id:props.data.device.id,event})
+}
 const device = computed(() => props.data.device)
 const icon = computed(() => device.value.icon ? `/icons/${encodeURIComponent(device.value.icon)}` : '')
 const position = (side: Side) => ({ left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom })[side]
@@ -15,7 +21,7 @@ const pointStyle = (point: PortAnchor) => ({
 })
 </script>
 <template>
-  <div class="device-node" :class="{'device-running': device.status === 'running'}" :title="device.name">
+  <div class="device-node" @contextmenu="openContext" :class="{'device-running': device.status === 'running'}" :title="device.name">
     <!-- Existing cables use private, stable handles. Different interface numbers
          cannot snap three cables onto one generic VueFlow source handle. -->
     <Handle v-for="h in data.anchors || []" :key="`${h.end}-${h.linkId}`"
