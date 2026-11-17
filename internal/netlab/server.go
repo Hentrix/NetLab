@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,8 @@ type Server struct {
 	engine           *Engine
 	data, web, token string
 	sampler          metricSampler
+	ticketsMu        sync.Mutex
+	vncTickets       map[string]vncTicket
 }
 
 func NewServer(data, web, token string) (*Server, error) {
@@ -46,7 +49,7 @@ func NewServer(data, web, token string) (*Server, error) {
 	if _, err := exec.LookPath("ovs-vsctl"); err == nil {
 		e.Recover(store.State.Labs)
 	}
-	return &Server{store: store, engine: e, data: data, web: web, token: token}, nil
+	return &Server{store: store, engine: e, data: data, web: web, token: token,vncTickets:make(map[string]vncTicket)}, nil
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -58,6 +61,8 @@ func (s *Server) Handler() http.Handler {
 		respond(w, 200, map[string]any{"status": "ok", "version": "0.8.2"})
 	})
 	mux.Handle("/api/", s.auth(http.HandlerFunc(s.api)))
+	mux.HandleFunc("/vnc/",s.proxyVNC)
+	mux.Handle("/novnc/",http.StripPrefix("/novnc/",http.FileServer(http.Dir("/usr/share/novnc"))))
 	mux.Handle("/", http.FileServer(http.Dir(s.web)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -121,6 +126,10 @@ func (s *Server) hasRunning(l Lab) bool {
 }
 func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/"), "/"), "/")
+	if len(parts)==5 && parts[0]=="labs" && parts[2]=="nodes" && parts[4]=="vnc-ticket" {
+		s.issueVNCTicket(w,r,parts[1],parts[3])
+		return
+	}
 	if len(parts) == 6 && parts[0] == "labs" && parts[2] == "nodes" && parts[4] == "console" && parts[5] == "stream" {
 		s.consoleStream(w, r, parts[1], parts[3])
 		return
