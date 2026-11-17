@@ -67,6 +67,18 @@ const families=computed(()=>{
 })
 const selectedDraft=computed(()=>draftNodes.value.find(({lab,node})=>lab.id+':'+node.id===publishNodeID.value))
 const publishReady=computed(()=>!!selectedDraft.value&&selectedDraft.value.node.status==='stopped')
+const mediaBusy=ref(false)
+const selectedISO=computed(()=>installers.value.find(image=>image.id===selectedDraft.value?.node.installISOId))
+async function changeMedia(installISOId:string,bootOrder:'disk'|'cdrom'){
+ const selected=selectedDraft.value
+ if(!selected||selected.node.status!=='stopped'||mediaBusy.value)return
+ mediaBusy.value=true;status.value=''
+ try{
+  await store.configureNodeMedia(selected.lab.id,selected.node.id,installISOId,bootOrder)
+  status.value=installISOId?bootOrder==='cdrom'?'Загрузка с ISO включена.':'Первым будет загружаться системный диск.':'Установочный ISO извлечён. VM будет загружаться с системного диска.'
+ }catch(e){store.failure=(e as Error).message}
+ finally{mediaBusy.value=false}
+}
 async function uploadISO(){
  if(!isoFile.value||uploadBusy.value)return
  const selected=isoFile.value
@@ -165,6 +177,17 @@ async function refresh(){
         <label>Подготовленная VM
           <UiSelect v-model="publishNodeID"><option value="">Выберите устройство</option><option v-for="item in draftNodes" :key="item.lab.id+':'+item.node.id" :value="item.lab.id+':'+item.node.id">{{item.lab.name}} / {{item.node.name}}</option></UiSelect>
         </label>
+        <div v-if="selectedDraft" class="workshop-media">
+          <strong>Загрузочный носитель</strong>
+          <span>{{selectedISO?'ISO: '+selectedISO.name:'ISO не подключён'}} · Приоритет: {{selectedDraft.node.bootOrder==='disk'||!selectedISO?'Диск':'ISO'}}</span>
+          <small>Изменять носитель можно только после остановки VM. Рабочий диск и установленная ОС сохраняются.</small>
+          <div class="workshop-media-actions">
+            <button type="button" :disabled="!publishReady||mediaBusy||!selectedISO" @click="changeMedia(selectedDraft.node.installISOId||'','disk')">Загрузка с диска</button>
+            <button type="button" :disabled="!publishReady||mediaBusy||!selectedISO" @click="changeMedia(selectedDraft.node.installISOId||'','cdrom')">Загрузка с ISO</button>
+            <button type="button" :disabled="!publishReady||mediaBusy||!selectedISO" @click="changeMedia('','disk')">Извлечь ISO</button>
+            <button type="button" :disabled="!publishReady||mediaBusy||!isoID||isoID===selectedDraft.node.installISOId" @click="changeMedia(isoID,'cdrom')">Подключить выбранный ISO</button>
+          </div>
+        </div>
         <p>После завершения установки выключите гостевую ОС. Сервер объединит рабочий диск с базовым в отдельный QCOW2 и добавит версию в каталог. Исходная VM останется доступна.</p>
         <small v-if="selectedDraft && !publishReady" role="status">VM ещё не остановлена ({{selectedDraft.node.status||'состояние неизвестно'}}). Выключите её и нажмите «Обновить».</small>
         <button class="primary" type="button" :disabled="!publishReady||publishing||!name.trim()||!family.trim()||!version.trim()" @click="publish">
@@ -226,6 +249,11 @@ async function refresh(){
 .workshop-family small{color:var(--muted)}
 .workshop-version{display:grid;gap:2px;padding:8px 0;border-top:1px solid var(--border);font-size:12px}
 .workshop-version span{font-size:11px;color:var(--muted)}
+.workshop-media{display:grid;gap:8px;padding:11px;border:1px solid var(--border);border-radius:7px;background:var(--surface-2)}
+.workshop-media>strong{font-size:12px}
+.workshop-media>span{font-size:12px;color:var(--ink)}
+.workshop-media-actions{display:flex;flex-wrap:wrap;gap:6px}
+.workshop-media-actions button{font-size:11px;padding:7px 9px}
 .workshop-revision-card{gap:12px}
 .workshop-revision-card p{font-size:12px;color:var(--muted);margin:0}
 .workshop-revision-card .workshop-grid{grid-template-columns:repeat(3,minmax(0,1fr))}

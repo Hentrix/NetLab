@@ -1,7 +1,7 @@
 export type DeviceStatus = 'running' | 'stopped' | 'error' | string
 export type DeviceKind = 'router' | 'switch' | 'pc' | 'firewall' | 'server' | string
 export interface Device {
-  id: string; name: string; imageId?: string; installISOId?: string; icon?: string
+  id: string; name: string; imageId?: string; installISOId?: string; bootOrder?: 'disk' | 'cdrom'; icon?: string
   engine?: 'vpcs' | 'qemu'; kind?: DeviceKind; status?: DeviceStatus
   x: number; y: number; nicCount?: number; portStyle?: string; ports?: PortSpec[]; error?: string
   ram?: number; cpus?: number; nicModel?: string; diskBus?: string

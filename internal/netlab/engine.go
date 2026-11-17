@@ -306,8 +306,15 @@ func (e *Engine) Start(l Lab, n Node, img Image) error {
 	if n.InstallISOID!="" {
 		iso:=filepath.Join(e.data,"images",n.InstallISOID+".iso")
 		if _,err:=os.Stat(iso);err!=nil{return fmt.Errorf("ISO не найден: %w",err)}
-		args=append(args,"-drive","file="+iso+",media=cdrom,readonly=on","-boot","order=d")
+		args=append(args,"-drive","file="+iso+",media=cdrom,readonly=on")
 	}
+	// Use fallback boot from the other medium when both disk and CD-ROM exist.
+	// Legacy workshop nodes (empty BootOrder) retain CD-ROM-first boot.
+	boot:="c"
+	if n.InstallISOID!="" {
+		if n.BootOrder=="disk" {boot="cd"} else {boot="dc"}
+	}
+	args=append(args,"-boot","order="+boot)
 	for port := 0; port < capacity; port++ {
 		tap := tapName(n.ID, port)
 		netID, deviceID := netdevID(port), nicID(port)

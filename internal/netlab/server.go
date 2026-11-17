@@ -759,6 +759,34 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 	}
 	if len(p) == 5 {
 		action := p[4]
+		if r.Method == http.MethodPatch && action == "media" {
+			if node.Engine == "vpcs" {fail(w,409,"VPCS не поддерживает ISO");return}
+			if s.hasRunning(*l) {fail(w,409,"сначала остановите лабораторию");return}
+			var req struct {
+				InstallISOID *string `json:"installISOId"`
+				BootOrder *string `json:"bootOrder"`
+			}
+			if !decode(w,r,&req) {return}
+			if req.InstallISOID==nil || req.BootOrder==nil {
+				fail(w,400,"укажите installISOId и bootOrder");return
+			}
+			next:=*node
+			next.InstallISOID=*req.InstallISOID
+			next.BootOrder=*req.BootOrder
+			if next.InstallISOID!="" && !validID(next.InstallISOID) {
+				fail(w,400,"неверный ID ISO");return
+			}
+			if err:=validateNode(next);err!=nil {fail(w,400,err.Error());return}
+			if !s.validNodeMedia(next) {fail(w,404,"ISO установщика не найден");return}
+			before:=*node
+			*node=next
+			if err:=s.store.save();err!=nil {
+				*node=before
+				fail(w,500,err.Error());return
+			}
+			respond(w,200,next)
+			return
+		}
 		if r.Method == "POST" && action == "start" {
 			if err := s.startNode(*l, *node); err != nil {
 				fail(w, 500, err.Error())

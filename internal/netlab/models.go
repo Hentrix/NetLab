@@ -75,6 +75,7 @@ type Node struct {
 	Name      string     `json:"name"`
 	ImageID   string     `json:"imageId"`
 	InstallISOID string `json:"installISOId,omitempty"`
+	BootOrder string `json:"bootOrder,omitempty"` // empty = CD-ROM first when attached; disk otherwise
 	Engine    string     `json:"engine,omitempty"` // empty = legacy QEMU, or vpcs
 	RAM       int        `json:"ram"`
 	CPUs      int        `json:"cpus"`
@@ -164,7 +165,9 @@ func validateNode(n Node) error {
 	if n.Engine != "" && n.Engine != "qemu" && n.Engine != "vpcs" {
 		return errors.New("неподдерживаемый движок устройства")
 	}
+	if n.BootOrder != "" && n.BootOrder != "disk" && n.BootOrder != "cdrom" { return errors.New("порядок загрузки: disk или cdrom") }
 	if n.Engine == "vpcs" {
+		if n.BootOrder != "" { return errors.New("VPCS не поддерживает загрузочные носители") }
 		if n.ImageID != "" || n.InstallISOID != "" || n.NICCount != 1 {
 			return errors.New("VPCS не использует диск и поддерживает ровно один Ethernet-порт")
 		}
