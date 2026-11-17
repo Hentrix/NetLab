@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api, json } from '@/api/client'
 import { sameTopologyStructure } from '@/topology/status-reconcile'
-import type { Cable, Device, Annotation, ImageRecord, Lab, Template, HostSystem, HostMetrics } from '@/types'
+import type { Cable, Device, Annotation, ImageRecord, Lab, Template, HostSystem, HostMetrics, LabStartProgress } from '@/types'
 
 export const useNetlabStore = defineStore('netlab', () => {
   const token = ref(sessionStorage.getItem('netlabToken') || '')
@@ -12,6 +12,7 @@ export const useNetlabStore = defineStore('netlab', () => {
   const system = ref<HostSystem>({})
   const metrics = ref<HostMetrics | null>(null)
   const checking = ref(false)
+  const startProgress = ref<LabStartProgress | null>(null)
   const labID = ref<string | null>(null)
   const selectedID = ref<string | null>(null)
   // IDs of all devices selected in the active lab; selectedID is the inspector's primary node.
@@ -291,9 +292,40 @@ export const useNetlabStore = defineStore('netlab', () => {
     await action(()=>api<Cable>(token.value,`labs/${current().id}/links/${id}`,{method:'PATCH',body:json(payload)})); await refresh()
   }
   async function labPower(operation: 'start' | 'stop') {
-    await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
+    const lab=current()
+    if(operation==='stop'){
+      if(startProgress.value?.status==='running'&&startProgress.value.labId===lab.id)
+        throw Error('Завершите запуск лаборатории перед остановкой всей топологии')
+      await action(()=>api<unknown>(token.value,`labs/${lab.id}/stop`,{method:'POST'}))
+      await refresh()
+      return
+    }
+    if(startProgress.value?.status==='running'&&startProgress.value.labId===lab.id)
+      throw Error('Запуск этой лаборатории уже выполняется')
+    const started=await action(()=>api<LabStartProgress>(token.value,`labs/${lab.id}/start-job`,{method:'POST'}))
+    startProgress.value=started
+    try{
+      for(let attempt=0;attempt<1200;attempt++){
+        const snapshot=await api<LabStartProgress>(token.value,`labs/${lab.id}/start-job`)
+        if(snapshot.id!==started.id)throw Error('Операция запуска была заменена другой')
+        startProgress.value=snapshot
+        if(snapshot.status!=='running'){
+          if(snapshot.status==='failed')throw Error(snapshot.error||'Не удалось запустить лабораторию')
+          return
+        }
+        await new Promise<void>(resolve=>setTimeout(resolve,500))
+      }
+      throw Error('Превышено время отслеживания запуска; проверьте состояние сервера')
+    }catch(e){
+      failure.value=(e as Error).message
+      throw e
+    }finally{
+      const reported=failure.value
+      await refresh()
+      if(reported)failure.value=reported
+    }
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,selectedDeviceIDs,selectDeviceGroup,clickDeviceInSidebar,busy,failure,live,activeLab,selectedNode,
     authenticate,logout,refresh,pollActiveLab,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,refreshImages,refreshTemplates,createBlankImage,prepareWorkshopFromISO,createWorkshopRevision,configureNodeMedia,publishWorkshop,updateImageMetadata,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
-    removeNode,updateNode,configureQemuNode,bulkNodes,moveTopologyItems,connect,disconnect,updateCable,labPower}
+    removeNode,updateNode,configureQemuNode,bulkNodes,moveTopologyItems,connect,disconnect,updateCable,labPower,startProgress}
 })

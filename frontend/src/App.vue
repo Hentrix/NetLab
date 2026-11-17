@@ -365,7 +365,12 @@ async function retryFailedNodes(){
  catch(e){store.failure=(e as Error).message}
  finally{retryBusy.value=false}
 }
-async function powerLab(op:'start'|'stop'){await store.labPower(op)}
+const activeStartProgress=computed(()=>store.startProgress?.labId===store.activeLab?.id?store.startProgress:null)
+const startCompleted=computed(()=>activeStartProgress.value?.nodes.filter(n=>['running','existing'].includes(n.status)).length||0)
+async function powerLab(op:'start'|'stop'){
+ try{await store.labPower(op)}
+ catch(e){store.failure=(e as Error).message}
+}
 function kindIcon(kind?:string){return kind==='pc'?'pc':kind==='firewall'?'shield':kind==='server'?'server':'router'}
 function consoleOpen(device:Device){terminal.value?.open(device)}
 const graphicsDevice=ref<Device|null>(null)
@@ -437,7 +442,13 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
         <form class="login-card" @submit.prevent="login"><Router :size="34"/><h1>Вход в NetLab</h1><p>Токен администратора хранится только в текущей вкладке браузера.</p><label>Токен<input v-model="tokenEntry" type="password" autocomplete="off" required/></label><button class="primary" type="submit">Войти</button></form>
       </template>
       <template v-else-if="page==='labs'">
-        <header class="page-title"><div><h1>{{store.activeLab?.name||'Лаборатории'}}</h1><p>Редактор сетевой топологии · Vue 3 + Vue Flow</p></div><div class="header-commands" v-if="store.activeLab"><button @click="powerLab('start')"><Play :size="16"/> Запустить всё</button><button @click="powerLab('stop')"><Square :size="16"/> Остановить всё</button><button v-if="failedNodes.length" :disabled="retryBusy" class="retry-failed-action" @click="retryFailedNodes"><RotateCcw :size="16"/> Повторить ошибки ({{failedNodes.length}})</button><button @click="openBulk"><Monitor :size="16"/> Массовые действия</button><button @click="screenshot" title="Сохранить топологию в PNG"><Camera :size="16"/> Снимок</button><button title="Обновить" @click="store.refresh()"><RotateCcw :size="16"/></button><button class="danger" title="Удалить лабораторию" @click="removeLab"><Trash2 :size="16"/></button></div></header>
+        <header class="page-title"><div><h1>{{store.activeLab?.name||'Лаборатории'}}</h1><p>Редактор сетевой топологии · Vue 3 + Vue Flow</p></div><div class="header-commands" v-if="store.activeLab"><button :disabled="activeStartProgress?.status==='running'" @click="powerLab('start')"><Play :size="16"/> Запустить всё</button><button :disabled="activeStartProgress?.status==='running'" @click="powerLab('stop')"><Square :size="16"/> Остановить всё</button><button v-if="failedNodes.length" :disabled="retryBusy" class="retry-failed-action" @click="retryFailedNodes"><RotateCcw :size="16"/> Повторить ошибки ({{failedNodes.length}})</button><button @click="openBulk"><Monitor :size="16"/> Массовые действия</button><button @click="screenshot" title="Сохранить топологию в PNG"><Camera :size="16"/> Снимок</button><button title="Обновить" @click="store.refresh()"><RotateCcw :size="16"/></button><button class="danger" title="Удалить лабораторию" @click="removeLab"><Trash2 :size="16"/></button></div></header>
+        <section v-if="activeStartProgress" class="lab-start-progress" role="status" aria-live="polite">
+          <div class="lab-progress-title"><strong>{{activeStartProgress.status==='running'?'Запуск топологии…':activeStartProgress.status==='completed'?'Запуск завершён':'Запуск с ошибкой'}}</strong><span>{{startCompleted}} / {{activeStartProgress.nodes.length}} устройств готовы</span></div>
+          <div class="lab-progress-bar"><div :style="{width:(activeStartProgress.nodes.length?startCompleted/activeStartProgress.nodes.length*100:100)+'%'}"/></div>
+          <div class="lab-progress-nodes"><span v-for="node in activeStartProgress.nodes" :key="node.id" :class="'lab-progress-'+node.status" :title="node.error||node.status">{{node.name}} · {{node.status==='starting'?'Запускается':node.status==='running'?'Запущен':node.status==='existing'?'Уже запущен':node.status==='rolling-back'?'Откат':node.status==='rolled-back'?'Остановлен после ошибки':node.status==='failed'?'Ошибка':'Ожидание'}}</span></div>
+          <p v-if="activeStartProgress.error" class="lab-progress-error">{{activeStartProgress.error}}</p>
+        </section>
         <section v-if="store.activeLab&&failedNodes.length" class="lab-failures" role="status" aria-label="Ошибки запуска устройств">
           <div class="lab-failures-heading"><AlertTriangle :size="16"/><strong>Не запустились: {{failedNodes.length}}</strong><span>Выберите устройство, чтобы увидеть причину и журнал</span></div>
           <div class="lab-failures-items"><button v-for="node in failedNodes" :key="node.id" type="button" :title="node.error" @click="store.selectDeviceGroup([node.id],node.id)">{{node.name}} <small>{{node.error}}</small></button></div>

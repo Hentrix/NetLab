@@ -42,3 +42,10 @@ export interface HostMetrics {
   cpuPercent?: number | null; memoryUsedMiB?: number
   memoryTotalMiB?: number; savedAt?: string | null
 }
+
+
+export interface LabStartProgress {
+  id:string; labId:string; status:'running'|'completed'|'failed'; error?:string
+  nodes:{id:string;name:string;status:'pending'|'starting'|'running'|'existing'|'rolling-back'|'rolled-back'|'failed';error?:string}[]
+  startedAt:string;finishedAt?:string
+}

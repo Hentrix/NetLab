@@ -26,6 +26,8 @@ type Server struct {
 	ticketsMu        sync.Mutex
 	vncTickets       map[string]vncTicket
 	recoveryError string // diagnostic after startup network reconciliation
+	jobsMu sync.Mutex
+	startJobs map[string]*LabStartJob
 }
 
 func NewServer(data, web, token string) (*Server, error) {
@@ -57,7 +59,7 @@ func NewServer(data, web, token string) (*Server, error) {
 			if err:=e.RecoverChecked(store.State.Labs);err!=nil {recoveryError=err.Error()}
 		} else {recoveryError="восстановление сети не выполнено: ip не установлен"}
 	} else {recoveryError="восстановление сети не выполнено: ovs-vsctl не установлен"}
-	return &Server{store:store,engine:e,data:data,web:web,token:token,vncTickets:make(map[string]vncTicket),recoveryError:recoveryError},nil
+	return &Server{store:store,engine:e,data:data,web:web,token:token,vncTickets:make(map[string]vncTicket),recoveryError:recoveryError,startJobs:make(map[string]*LabStartJob)},nil
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -459,6 +461,7 @@ func (s *Server) labsAPI(w http.ResponseWriter, r *http.Request, p []string) {
 		fail(w, 404, "лаборатория не найдена")
 		return
 	}
+	if len(p)==3 && p[2]=="start-job" {s.startJobAPI(w,r,id);return}
 	s.store.mu.Lock()
 	defer s.store.mu.Unlock()
 	lab := s.store.findLab(id)

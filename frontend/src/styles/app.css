@@ -361,3 +361,18 @@
 .inspector-node-failure button{justify-self:start;border:1px solid var(--border);background:var(--surface);padding:6px 9px;border-radius:5px;color:var(--accent)}
 .header-commands .retry-failed-action{border-color:#c7836290;color:#b46c49}
 @media(max-width:1140px){.lab-failures{flex-wrap:wrap}.lab-failures-heading span{display:none}.lab-failures-items{flex-basis:100%}}
+
+
+/* Per-node start progress; the topology remains visible while guests boot. */
+.lab-start-progress{flex:none;margin:0 17px 10px;padding:11px 13px;border:1px solid var(--border);background:var(--surface);border-radius:8px;display:grid;gap:8px;min-width:0}
+.lab-progress-title{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px}
+.lab-progress-title span{font-size:11px;color:var(--muted)}
+.lab-progress-bar{height:5px;border-radius:5px;overflow:hidden;background:var(--surface-2)}
+.lab-progress-bar>div{height:100%;background:#4a9d81;transition:width .25s ease}
+.lab-progress-nodes{display:flex;gap:6px;max-width:100%;overflow:auto;padding-bottom:2px}
+.lab-progress-nodes span{display:inline-flex;flex:none;padding:4px 8px;border:1px solid var(--border);border-radius:5px;background:var(--surface-2);color:var(--muted);white-space:nowrap;font-size:10px}
+.lab-progress-nodes .lab-progress-starting{border-color:var(--accent);color:var(--accent)}
+.lab-progress-nodes .lab-progress-running,.lab-progress-nodes .lab-progress-existing{color:#4a9d81;border-color:#4a9d8160}
+.lab-progress-nodes .lab-progress-rolling-back{color:#b38a56}
+.lab-progress-nodes .lab-progress-failed{color:#ba6b4f;border-color:#ba6b4f80}
+.lab-progress-error{margin:0;font-size:11px;color:#ba6b4f;white-space:pre-wrap;overflow-wrap:anywhere}
