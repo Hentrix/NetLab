@@ -399,7 +399,9 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request) {
 func parseInt(s string) (int, error) { var v int; _, err := fmt.Sscanf(s, "%d", &v); return v, err }
 
 // Each node selects its own emulation driver. Legacy saved nodes default to QEMU.
-func (s *Server) startNode(l Lab, n Node) error {
+func (s *Server) startNode(l Lab, n Node) (startErr error) {
+ // Pre-spawn errors are recorded against the node and visible in /api/labs.
+ defer func(){s.engine.SetStartFailure(l.ID,n.ID,startErr)}()
 	if n.Engine == "vpcs" {
 		return s.engine.StartVPCS(l, n)
 	}
