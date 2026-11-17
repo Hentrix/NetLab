@@ -229,3 +229,5 @@
 
 /* Console activity indicator in non-active tabs. */
 .term-unread{display:inline-block;width:6px;height:6px;margin-left:5px;border-radius:50%;background:var(--accent);vertical-align:middle}
+
+.canvas-annotation-preview{position:absolute;z-index:20;pointer-events:none;border:1.5px dashed var(--accent);background:var(--accent-soft);opacity:.62;border-radius:4px}

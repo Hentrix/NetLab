@@ -19,6 +19,54 @@ const { fitView, zoomIn, zoomOut, setViewport, updateNodeInternals, viewport, sc
 const canvasElement=ref<HTMLElement|null>(null)
 const panMode = ref(false)
 const drawingMode=ref<'select'|'marquee'|'text'|'note'>('select')
+const drawingBox=ref<{left:number;top:number;width:number;height:number}|null>(null)
+let noteGesture:{startX:number;startY:number}|null=null
+let suppressPaneClick=false
+function startAnnotationGesture(event:PointerEvent){
+  if(drawingMode.value!=='note'||event.button!==0)return
+  const target=event.target as HTMLElement
+  if(!target.closest('.vue-flow__pane'))return
+  event.preventDefault()
+  event.stopPropagation()
+  noteGesture={startX:event.clientX,startY:event.clientY}
+  updateAnnotationGesture(event)
+  window.addEventListener('pointermove',updateAnnotationGesture)
+  window.addEventListener('pointerup',finishAnnotationGesture)
+  window.addEventListener('pointercancel',cancelAnnotationGesture)
+}
+function updateAnnotationGesture(event:PointerEvent){
+  if(!noteGesture)return
+  const bounds=canvasElement.value?.getBoundingClientRect()
+  if(!bounds)return
+  drawingBox.value={
+    left:Math.min(noteGesture.startX,event.clientX)-bounds.left,
+    top:Math.min(noteGesture.startY,event.clientY)-bounds.top,
+    width:Math.abs(event.clientX-noteGesture.startX),
+    height:Math.abs(event.clientY-noteGesture.startY)
+  }
+}
+function cancelAnnotationGesture(){
+  window.removeEventListener('pointermove',updateAnnotationGesture)
+  window.removeEventListener('pointerup',finishAnnotationGesture)
+  window.removeEventListener('pointercancel',cancelAnnotationGesture)
+  drawingBox.value=null
+  noteGesture=null
+}
+function finishAnnotationGesture(event:PointerEvent){
+  if(!noteGesture)return
+  const start=screenToFlowCoordinate({x:noteGesture.startX,y:noteGesture.startY})
+  const end=screenToFlowCoordinate({x:event.clientX,y:event.clientY})
+  const width=Math.abs(end.x-start.x),height=Math.abs(end.y-start.y)
+  const position=clampAnnotationPosition(Math.min(start.x,end.x),Math.min(start.y,end.y))
+  suppressPaneClick=true
+  cancelAnnotationGesture()
+  drawingMode.value='select'
+  newAnnotation('note',position)
+  if(width>=8&&height>=8){
+    annotationDraft.value.width=Math.max(160,Math.min(1200,Math.round(width)))
+    annotationDraft.value.height=Math.max(80,Math.min(800,Math.round(height)))
+  }
+}
 const spacePan=ref(false)
 function setCanvasMode(mode:'select'|'pan'|'cable'|'marquee'|'text'|'note'){
   panMode.value=mode==='pan'
@@ -40,6 +88,7 @@ function paneDoubleClick(event:MouseEvent){
   emit('add-at',{x:Math.round(point.x),y:Math.round(point.y)})
 }
 function paneClickAt(event:MouseEvent){
+  if(suppressPaneClick){suppressPaneClick=false;return}
   if(drawingMode.value==='text'||drawingMode.value==='note'){
     newAnnotation(drawingMode.value,screenToFlowCoordinate({x:event.clientX,y:event.clientY}))
     drawingMode.value='select'
@@ -310,6 +359,7 @@ async function resizeFinish(event:PointerEvent){
 }
 function onKeyboard(event:KeyboardEvent){
   if(event.key==='Escape'){
+    if(noteGesture)cancelAnnotationGesture()
     dismissContextMenu();closeDeviceContext();closeCanvasContext()
     if(resizeState.value)resizeCancel()
     setCanvasMode('select')
@@ -339,7 +389,7 @@ function onKeyRelease(event:KeyboardEvent){
   if(event.code==='Space'&&spacePan.value){spacePan.value=false;panMode.value=false}
 }
 onMounted(()=>{window.addEventListener('keydown',onKeyboard);window.addEventListener('keyup',onKeyRelease)})
-onBeforeUnmount(()=>{window.removeEventListener('keydown',onKeyboard);window.removeEventListener('keyup',onKeyRelease);resizeCancel()})
+onBeforeUnmount(()=>{window.removeEventListener('keydown',onKeyboard);window.removeEventListener('keyup',onKeyRelease);resizeCancel();cancelAnnotationGesture()})
 
 const annotationDraft=ref<Omit<Annotation,'id'>>({
   kind:'note',text:'',x:160,y:160,width:220,height:100,
@@ -498,7 +548,7 @@ function doubleClick(event:{node:{id:string}}){
 function closeEditor(){editingID.value=null}
 </script>
 <template>
-  <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @dragover="onCanvasDragOver" @drop="onCanvasDrop" @click.self="dismissContextMenu();closeDeviceContext();closeCanvasContext()">
+  <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @pointerdown.capture="startAnnotationGesture" @dragover="onCanvasDragOver" @drop="onCanvasDrop" @click.self="dismissContextMenu();closeDeviceContext();closeCanvasContext()">
     <VueFlow id="netlab-topology" :nodes="nodes" :edges="edges" :nodes-draggable="!panMode" :nodes-connectable="!panMode"
       :elements-selectable="!panMode" :pan-on-drag="panMode" :selection-on-drag="!panMode"
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
@@ -515,7 +565,7 @@ function closeEditor(){editingID.value=null}
       <span class="tool-separator" />
       <button type="button" title="Добавить устройство" @click="emit('add')"><Plus :size="18"/></button>
       <button type="button" :class="{on:drawingMode==='text'}" title="Текст (T): нажмите на полотно" @click="setCanvasMode('text')"><Type :size="17"/></button>
-      <button type="button" :class="{on:drawingMode==='note'}" title="Примечание (N): нажмите на полотно" @click="setCanvasMode('note')"><StickyNote :size="17"/></button>
+      <button type="button" :class="{on:drawingMode==='note'}" title="Примечание (N): выделите прямоугольник на полотне" @click="setCanvasMode('note')"><StickyNote :size="17"/></button>
       <button type="button" :class="{on:drawingMode==='marquee'}" title="Выделение рамкой (M)" @click="setCanvasMode('marquee')"><MousePointer2 :size="15"/></button>
       <button type="button" title="Показать всю топологию" @click="fitView({padding:.2,duration:250})"><Scan :size="17"/></button>
       <span v-if="selectedDevices.length>1" class="canvas-selection-count">Выбрано: {{selectedDevices.length}}</span>
@@ -527,6 +577,7 @@ function closeEditor(){editingID.value=null}
       <button type="button" title="Масштаб 100%" @click="resetZoom">100%</button>
       <button type="button" title="Показать всё" @click="fitView({padding:.2,duration:250})"><Maximize :size="16"/></button>
     </div>
+    <div v-if="drawingBox" class="canvas-annotation-preview" :style="{left:drawingBox.left+'px',top:drawingBox.top+'px',width:drawingBox.width+'px',height:drawingBox.height+'px'}"></div>
     <div v-if="!panMode&&!cableMode" class="canvas-selection-hint">Shift + перетаскивание — выделить рамкой · Ctrl/Cmd + клик — несколько устройств</div>
     <div v-if="cableMode" class="canvas-cable-hint"><CableIcon :size="14"/> {{firstCableNode?'Выберите второе устройство':'Выберите первое устройство'}} <button title="Отменить" @click="cableMode=false;firstCableNode=null"><X :size="13"/></button></div>
     <div v-if="!current?.nodes.length" class="canvas-empty"><MonitorPlay :size="30"/><strong>Лаборатория пуста</strong><span>Нажмите «+», чтобы добавить устройство</span></div>
