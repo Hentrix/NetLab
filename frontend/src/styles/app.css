@@ -376,3 +376,15 @@
 .lab-progress-nodes .lab-progress-rolling-back{color:#b38a56}
 .lab-progress-nodes .lab-progress-failed{color:#ba6b4f;border-color:#ba6b4f80}
 .lab-progress-error{margin:0;font-size:11px;color:#ba6b4f;white-space:pre-wrap;overflow-wrap:anywhere}
+
+
+/* Capacity reservation indicators */
+.vm-capacity-card{margin:16px 0;padding:18px 20px;background:var(--surface);border:1px solid var(--border);border-radius:10px;display:grid;gap:13px}
+.vm-capacity-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.vm-capacity-heading h2{font-size:14px;margin:0 0 4px}
+.vm-capacity-heading p,.vm-capacity-card>small{font-size:11px;color:var(--muted);margin:0}
+.vm-capacity-heading>strong{font-size:14px;color:var(--accent)}
+.vm-capacity-stats{display:flex;flex-wrap:wrap;gap:14px 26px}
+.vm-capacity-stats span{display:grid;gap:3px;font-size:11px;color:var(--muted)}
+.vm-capacity-stats b{font-size:15px;color:var(--ink);font-weight:650}
+.vm-capacity-progress{height:6px}
