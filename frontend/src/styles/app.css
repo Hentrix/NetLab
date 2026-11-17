@@ -327,3 +327,10 @@
 .inspector-device-hero small{color:var(--muted);font-size:11px}
 .inspector-node-error{margin:12px;padding:10px;border:1px solid #a94450;border-radius:5px;color:#e56d75;overflow-wrap:anywhere}
 .inspector-content strong{min-width:0;overflow-wrap:anywhere;text-align:right}
+
+/* Legacy note reading behaviour: text remains legible, then scrolls inside a small note. */
+.topology-annotation .annotation-content{display:block;width:100%;height:100%;min-height:0;max-width:100%;overflow-wrap:anywhere;white-space:pre-wrap;overflow-x:hidden;overflow-y:hidden;overscroll-behavior:contain;user-select:none}
+.topology-annotation .annotation-content::-webkit-scrollbar{width:6px}
+.topology-annotation .annotation-content::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
+.annotation-transparency{display:flex!important;align-items:center;gap:8px}
+.annotation-transparency input{min-width:0}
