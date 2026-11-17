@@ -411,8 +411,8 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
     <aside class="side-nav">
       <header class="brand"><span class="brand-mark"><Router :size="23"/></span><span><strong>NETLAB</strong><small>NETWORK EMULATION</small></span></header>
       <div class="side-group-label">РАБОЧАЯ ОБЛАСТЬ</div>
-      <button class="nav-link" :class="{active:page==='labs'}" @click="page='labs'"><LayoutDashboard :size="17"/> Лаборатории</button>
-      <button class="nav-link" :class="{active:page==='images'}" @click="page='images'"><HardDrive :size="17"/> Библиотека образов</button>
+      <button class="nav-link" :class="{active:page==='labs'}" @click="page='labs'"><LayoutDashboard :size="17"/> Лаборатории <small class="nav-count">{{store.labs.length}}</small></button>
+      <button class="nav-link" :class="{active:page==='images'}" @click="page='images'"><HardDrive :size="17"/> Библиотека образов <small class="nav-count">{{store.images.length}}</small></button>
       <button class="nav-link" :class="{active:page==='workshop'}" @click="page='workshop'"><Wrench :size="17"/> Мастерская образов</button>
       <button class="nav-link" :class="{active:page==='system'}" @click="page='system'"><Activity :size="17"/> Система</button>
       <div class="side-group-label">ЛАБОРАТОРИИ <button title="Новая лаборатория" @click="createLabOpen=true"><Plus :size="15"/></button></div>
@@ -473,7 +473,10 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
           </template><div v-else-if="!inspectorCollapsed" class="inspector-empty">Выберите устройство<br/>на топологии</div></aside>
         </div>
         <div v-else class="empty-panel"><Router :size="38"/><h2>Создайте лабораторию</h2><p>Устройства, кабели и настройки будут сохранены на Debian-сервере.</p><button class="primary" @click="createLabOpen=true"><Plus :size="16"/> Новая лаборатория</button></div>
-        <footer class="status-bar"><span><i :class="{ok:store.live}"/>{{liveStatus}}</span><span>{{store.activeLab?.nodes.length||0}} устройств</span><span>{{store.activeLab?.links.length||0}} соединений</span><span>{{apiLatency===null?'Задержка API —':`Задержка API ${apiLatency} мс`}}</span>
+        <footer class="status-bar"><span><i :class="{ok:store.live}"/>{{liveStatus}}</span>
+          <span>{{store.metrics?.cpuPercent==null?'CPU —':`CPU ${Math.round(store.metrics.cpuPercent)}%`}}</span>
+          <span>{{store.metrics?.memoryUsedMiB==null||!store.metrics.memoryTotalMiB?'RAM —':`RAM ${store.metrics.memoryUsedMiB} / ${store.metrics.memoryTotalMiB} МиБ`}}</span>
+          <span>{{store.activeLab?.nodes.length||0}} устройств</span><span>{{store.activeLab?.links.length||0}} соединений</span><span>{{apiLatency===null?'Задержка API —':`Задержка API ${apiLatency} мс`}}</span>
           <span>{{store.metrics?.savedAt?'Последнее сохранение '+new Date(store.metrics.savedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'Последнее сохранение —'}}</span>
           <span>{{telemetryLastSuccess?'Телеметрия '+telemetryLastSuccess:'NetLab · Vue'}}</span></footer>
       </template>
