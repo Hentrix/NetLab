@@ -57,8 +57,7 @@ function contextPosition(event:MouseEvent,width=220,height=250){
     world:screenToFlowCoordinate({x:event.clientX,y:event.clientY})
   }
 }
-function openPaneContext(payload:{event:MouseEvent}){
-  const event=payload.event
+function openPaneContext(event:MouseEvent){
   event.preventDefault()
   if(panMode.value||cableMode.value)return
   closeCanvasContext()
