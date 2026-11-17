@@ -14,6 +14,22 @@ import (
  "time"
 )
 
+// Restore images whose deletion was interrupted before the state commit.
+// Only catalogued images are restored; unreferenced tombstones are left for
+// an administrator to inspect rather than removed without confirmation.
+func recoverStagedImageDeletes(data string, images []Image) error {
+ for _, img := range images {
+  if !validID(img.ID) { continue }
+  switch img.Format { case "qcow2", "qcow", "raw", "img", "iso": default: continue }
+  path:=filepath.Join(data,"images",img.ID+"."+img.Format)
+  if _,err:=os.Stat(path);err==nil { continue } else if !errors.Is(err,os.ErrNotExist) { return err }
+  staged:=path+".deleting"
+  if _,err:=os.Stat(staged);errors.Is(err,os.ErrNotExist) { continue } else if err!=nil { return err }
+  if err:=os.Rename(staged,path);err!=nil { return fmt.Errorf("восстановление образа %s: %w",img.ID,err) }
+ }
+ return nil
+}
+
 // ISO9660 primary or supplementary volume descriptor (sector 16 onwards).
 // Reject renamed arbitrary files before attaching them as a CD-ROM.
 func validateInstallerISO(path string) error {
