@@ -284,8 +284,8 @@ func TestPreparationMediaSwitchAndISOEject(t *testing.T) {
  code,body=httpCall(t,s,"PATCH",url,[]byte(`{"installISOId":"","bootOrder":"network"}`),true)
  assertStatus(t,code,400,body)
  code,body=httpCall(t,s,"PATCH",url,[]byte(`{"installISOId":"","bootOrder":"disk","imageId":"malicious"}`),true)
- assertStatus(t,code,200,body)
- // Only media fields are applied: a forged imageId must not replace the disk.
+ assertStatus(t,code,400,body)
+ // An attempted disk replacement through the media API must be rejected.
  s.store.mu.Lock()
  if findNode(&s.store.State.Labs[0],lab.Nodes[0].ID).ImageID!=disk.ID{t.Fatal("media API changed system disk")}
  s.store.mu.Unlock()
