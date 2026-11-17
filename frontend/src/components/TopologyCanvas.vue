@@ -608,18 +608,21 @@ function closeEditor(){editingID.value=null}
       <template #edge-cable="data"><CableEdge v-bind="data" /></template>
     </VueFlow>
     <div v-if="hoverTip" class="topology-hover-tip" role="status" :style="{left:hoverTip.left+'px',top:hoverTip.top+'px'}">{{hoverTip.text}}</div>
+    <!-- Exact tool order of the legacy editor: select, hand, cable / marquee, text, note / add. -->
     <div class="canvas-tools" role="toolbar" aria-label="Инструменты топологии">
-      <button type="button" :class="{on:!panMode&&!cableMode&&drawingMode==='select'}" title="Выделение (V)" @click="setCanvasMode('select')"><MousePointer2 :size="17"/></button>
-      <button type="button" :class="{on:panMode}" title="Перемещать полотно (H или пробел)" @click="setCanvasMode('pan')"><Hand :size="17"/></button>
-      <button type="button" :class="{on:cableMode}" title="Кабель (C): нажмите два устройства" @click="setCanvasMode(cableMode?'select':'cable')"><CableIcon :size="17"/></button>
-      <span class="tool-separator" />
-      <button type="button" title="Добавить устройство" @click="emit('add')"><Plus :size="18"/></button>
-      <button type="button" :class="{on:drawingMode==='text'}" title="Текст (T): нажмите на полотно" @click="setCanvasMode('text')"><Type :size="17"/></button>
-      <button type="button" :class="{on:drawingMode==='note'}" title="Примечание (N): выделите прямоугольник на полотне" @click="setCanvasMode('note')"><StickyNote :size="17"/></button>
-      <button type="button" :class="{on:drawingMode==='marquee'}" title="Выделение рамкой (M)" @click="setCanvasMode('marquee')"><MousePointer2 :size="15"/></button>
-      <button type="button" title="Показать всю топологию" @click="fitView({padding:.2,duration:250})"><Scan :size="17"/></button>
-      <span v-if="selectedDevices.length>1" class="canvas-selection-count">Выбрано: {{selectedDevices.length}}</span>
-      <button v-if="selectedDevices.length>1" type="button" title="Действия с выбранными устройствами" @click="bulkSelectedDevices"><MousePointer2 :size="16"/> Действия</button>
+      <button type="button" :class="{on:!panMode&&!cableMode&&drawingMode==='select'}" title="Выбор и перемещение (V)" aria-label="Выбор и перемещение" @click="setCanvasMode('select')"><MousePointer2 :size="17"/></button>
+      <button type="button" :class="{on:panMode}" title="Перемещение полотна (H / Space)" aria-label="Перемещение полотна" @click="setCanvasMode('pan')"><Hand :size="17"/></button>
+      <button type="button" :class="{on:cableMode}" title="Соединение устройств (C)" aria-label="Соединить устройства" @click="setCanvasMode(cableMode?'select':'cable')"><CableIcon :size="17"/></button>
+      <span class="tool-separator" aria-hidden="true"/>
+      <button type="button" :class="{on:drawingMode==='marquee'}" title="Выделить несколько устройств рамкой (M)" aria-label="Выделение рамкой" @click="setCanvasMode('marquee')"><Scan :size="17"/></button>
+      <button type="button" :class="{on:drawingMode==='text'}" title="Добавить текст на поле (T)" aria-label="Добавить текст" @click="setCanvasMode('text')"><Type :size="17"/></button>
+      <button type="button" :class="{on:drawingMode==='note'}" title="Добавить примечание (N)" aria-label="Добавить примечание" @click="setCanvasMode('note')"><StickyNote :size="17"/></button>
+      <span class="tool-separator" aria-hidden="true"/>
+      <button type="button" title="Добавить устройство (+)" aria-label="Добавить устройство" @click="emit('add')"><Plus :size="18"/></button>
+    </div>
+    <div v-if="selectedDevices.length>1" class="canvas-selection-actions">
+      <span>Выбрано: {{selectedDevices.length}}</span>
+      <button type="button" @click="bulkSelectedDevices">Действия</button>
     </div>
     <div class="canvas-scale" aria-label="Масштаб полотна">
       <button type="button" title="Уменьшить" @click="zoomOut({duration:150})"><Minus :size="16"/></button>
@@ -628,7 +631,6 @@ function closeEditor(){editingID.value=null}
       <button type="button" title="Показать всё" @click="fitView({padding:.2,duration:250})"><Maximize :size="16"/></button>
     </div>
     <div v-if="drawingBox" class="canvas-annotation-preview" :style="{left:drawingBox.left+'px',top:drawingBox.top+'px',width:drawingBox.width+'px',height:drawingBox.height+'px'}"></div>
-    <div v-if="!panMode&&!cableMode" class="canvas-selection-hint">Shift + перетаскивание — выделить рамкой · Ctrl/Cmd + клик — несколько устройств</div>
     <div v-if="cableMode" class="canvas-cable-hint"><CableIcon :size="14"/> {{firstCableNode?'Выберите второе устройство':'Выберите первое устройство'}} <button title="Отменить" @click="cableMode=false;firstCableNode=null"><X :size="13"/></button></div>
     <div v-if="!current?.nodes.length" class="canvas-empty"><MonitorPlay :size="30"/><strong>Лаборатория пуста</strong><span>Нажмите «+», чтобы добавить устройство</span></div>
     <div v-if="canvasContextMenu" class="device-context-menu canvas-context-menu" role="menu" aria-label="Действия на топологии" :style="{left:`${canvasContextMenu.x}px`,top:`${canvasContextMenu.y}px`}">
