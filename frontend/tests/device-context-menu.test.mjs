@@ -17,7 +17,7 @@ test('right click on device opens only its own Vue Flow menu',()=>{
   assert.match(canvas,/dismissContextMenu\(\)/)
 })
 test('context actions use existing App handlers for the exact device ID',()=>{
-  assert.match(canvas,/@device-action/)
+  assert.match(canvas,/emit\('device-action',\{id:item\.id,action\}\)/)
   assert.match(app,/@device-action="deviceContextAction"/)
   assert.match(app,/store\.activeLab\?\.nodes\.find\(node=>node\.id===payload\.id\)/)
   for(const action of ['console','start','stop','rename','hardware','ports','icon','delete'])
