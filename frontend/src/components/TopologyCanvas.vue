@@ -65,10 +65,8 @@ async function onCanvasDrop(event:DragEvent){
   if(nodeID){
     const device=current.value.nodes.find(n=>n.id===nodeID)
     if(device)try{await store.moveNode(nodeID,x,y)}catch(error){store.failure=(error as Error).message}
-  }else{
-    emit('add-at',{x,y})
-    // App receives and selects the exact dropped template separately.
-    if(templateID)emit('template-at',{templateID,x,y})
+  }else if(templateID){
+    emit('template-at',{templateID,x,y})
   }
 }
 const cableMode = ref(false)
