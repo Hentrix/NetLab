@@ -62,7 +62,7 @@ test('sidebar and inspector selection keeps a device outlined after pointer leav
   assert.match(canvas,/selected:isDeviceSelected\(device\.id\)/)
   assert.match(device,/device-selected':data\.selected/)
   assert.match(css,/\.vue-flow__node-device \.device-node\.device-selected/)
-  assert.match(canvas,/store\.selectedID=event\.node\.id/)
+  assert.match(canvas,/store\.selectedID=selected\.includes\(id\)\?id:/)
   assert.match(canvas,/store\.selectedID=null/)
 })
 
