@@ -13,7 +13,7 @@ import type { Device, Annotation } from '@/types'
 import { resizeAnnotation, clampAnnotationPosition, type ResizeSide, type AnnotationRect } from '@/topology/annotation-geometry'
 
 const store = useNetlabStore()
-type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'
+type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'|'log'
 const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'add-at',position:{x:number;y:number}):void; (e:'bulk', ids:string[]):void; (e:'device-action', payload:{id:string;action:DeviceContextAction}):void }>()
 const { fitView, zoomIn, zoomOut, updateNodeInternals, viewport, screenToFlowCoordinate } = useVueFlow({ id:'netlab-topology' })
 const canvasElement=ref<HTMLElement|null>(null)
@@ -117,6 +117,12 @@ function openDeviceContext(payload:{id:string;event:MouseEvent}){
   if(panMode.value||cableMode.value)return
   closeCanvasContext()
   if(!current.value?.nodes.some(node=>node.id===payload.id))return
+  if(selectedDevices.value.length>1&&selectedDevices.value.includes(payload.id)){
+    dismissContextMenu()
+    const position=contextPosition(payload.event,220,250)
+    if(position)canvasContextMenu.value={kind:'selection',...position}
+    return
+  }
   dismissContextMenu()
   const rect=canvasElement.value?.getBoundingClientRect()
   if(!rect)return
@@ -127,6 +133,14 @@ function openDeviceContext(payload:{id:string;event:MouseEvent}){
     y:Math.max(8,Math.min(Math.max(8,rect.height-menuHeight-8),payload.event.clientY-rect.top))
   }
   store.selectedID=payload.id
+}
+function startCableFromContext(){
+  const item=contextDevice.value
+  closeDeviceContext()
+  if(!item)return
+  panMode.value=false
+  cableMode.value=true
+  firstCableNode.value=item.id
 }
 function runDeviceContextAction(action:DeviceContextAction){
   const item=contextDevice.value
@@ -426,12 +440,14 @@ function closeEditor(){editingID.value=null}
       <div class="device-context-heading">{{contextDevice.name}} <small>{{contextDevice.status==='running'?'Запущено':'Остановлено'}}</small></div>
       <button v-if="contextDevice.status!=='running'" type="button" role="menuitem" @click="runDeviceContextAction('start')"><Play :size="15"/> Запустить</button>
       <button v-else type="button" role="menuitem" @click="runDeviceContextAction('stop')"><Square :size="15"/> Остановить</button>
-      <button type="button" role="menuitem" @click="runDeviceContextAction('console')"><MonitorPlay :size="15"/> Открыть консоль</button>
+      <button type="button" role="menuitem" :disabled="contextDevice.status!=='running'" @click="runDeviceContextAction('console')"><MonitorPlay :size="15"/> Открыть консоль</button>
       <div class="device-context-divider"></div>
+      <button type="button" role="menuitem" @click="startCableFromContext"><CableIcon :size="15"/> Протянуть кабель</button>
       <button type="button" role="menuitem" @click="runDeviceContextAction('rename')"><Type :size="15"/> Переименовать</button>
       <button type="button" role="menuitem" @click="runDeviceContextAction('ports')"><CableIcon :size="15"/> Интерфейсы</button>
       <button v-if="contextDevice.engine!=='vpcs'" type="button" role="menuitem" @click="runDeviceContextAction('hardware')"><Scan :size="15"/> Параметры QEMU</button>
       <button type="button" role="menuitem" @click="runDeviceContextAction('icon')"><StickyNote :size="15"/> Выбрать значок</button>
+      <button type="button" role="menuitem" @click="runDeviceContextAction('log')"><Type :size="15"/> Журнал устройства</button>
       <div class="device-context-divider"></div>
       <button type="button" role="menuitem" class="danger" :disabled="labHasRunningDevices" :title="labHasRunningDevices?'Для удаления остановите лабораторию':'Удалить узел и его соединения'" @click="runDeviceContextAction('delete')"><Trash2 :size="15"/> Удалить устройство</button>
     </div>
