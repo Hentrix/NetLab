@@ -101,6 +101,39 @@ export const useNetlabStore = defineStore('netlab', () => {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/nodes/batch`,{method:'POST',body:json({template,count})}))
     await refresh()
   }
+  // Persist Vue Flow group drag in one batch of requests, then refresh once.
+  // The existing Go endpoints validate coordinates and annotation shape.
+  async function moveTopologyItems(items: Array<{id:string;x:number;y:number}>): Promise<void> {
+    const lab=current()
+    const nodes=new Map(lab.nodes.map(node=>[node.id,node]))
+    const annotations=new Map((lab.annotations||[]).map(note=>[note.id,note]))
+    const unique=new Map(items.map(item=>[item.id,item]))
+    const errors:string[]=[]
+    let completed=0
+    for(const item of unique.values()){
+      const x=Math.round(item.x),y=Math.round(item.y)
+      const annotationID=item.id.startsWith('annotation:')?item.id.slice('annotation:'.length):null
+      const annotation=annotationID?annotations.get(annotationID):null
+      const node=nodes.get(item.id)
+      if(!node&&!annotation)continue
+      if((node?node.x:annotation!.x)===x&&(node?node.y:annotation!.y)===y)continue
+      try {
+        if(annotation&&annotationID){
+          const {id:_,...fields}=annotation
+          await api<Annotation>(token.value,`labs/${lab.id}/annotations/${annotationID}`,{
+            method:'PATCH',body:json({...fields,x,y})
+          })
+        }else if(node){
+          await api<Device>(token.value,`labs/${lab.id}/nodes/${node.id}`,{method:'PATCH',body:json({x,y})})
+        }
+        completed++
+      }catch(error){
+        errors.push(`${node?.name||'Примечание'}: ${(error as Error).message}`)
+      }
+    }
+    await refresh()
+    if(errors.length)failure.value=`Не удалось переместить ${errors.length} элементов (перемещено: ${completed}): ${errors.join('; ')}`
+  }
   async function moveNode(id: string, x: number, y: number) {
     const lab = current()
     await action(()=>api<Device>(token.value,`labs/${lab.id}/nodes/${id}`,{method:'PATCH',body:json({x: Math.round(x), y: Math.round(y)})}))
@@ -161,5 +194,5 @@ export const useNetlabStore = defineStore('netlab', () => {
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,busy,failure,live,activeLab,selectedNode,
     authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
-    removeNode,updateNode,configureQemuNode,bulkNodes,connect,disconnect,updateCable,labPower}
+    removeNode,updateNode,configureQemuNode,bulkNodes,moveTopologyItems,connect,disconnect,updateCable,labPower}
 })

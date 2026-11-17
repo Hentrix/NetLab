@@ -12,7 +12,7 @@ import AnnotationNode from './AnnotationNode.vue'
 import type { Device, Annotation } from '@/types'
 
 const store = useNetlabStore()
-const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void }>()
+const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'bulk', ids:string[]):void }>()
 const { fitView, zoomIn, zoomOut, updateNodeInternals } = useVueFlow({ id:'netlab-topology' })
 const panMode = ref(false)
 const cableMode = ref(false)
@@ -20,6 +20,16 @@ const firstCableNode = ref<string | null>(null)
 const pending = ref<{a:string;b:string} | null>(null)
 const chosen = ref({ a:0, b:0 })
 const saving = ref(false)
+const selectedOnCanvas=ref<string[]>([])
+const selectedDevices=computed(()=>selectedOnCanvas.value.filter(id=>current.value?.nodes.some(device=>device.id===id)))
+const movingGroup=ref(false)
+function selectionChanged(event:{nodes:Array<{id:string}>}){
+  if(panMode.value||cableMode.value){selectedOnCanvas.value=[];return}
+  selectedOnCanvas.value=event.nodes.map(node=>node.id)
+}
+function bulkSelectedDevices(){
+  if(selectedDevices.value.length)emit('bulk', [...selectedDevices.value])
+}
 const editingID = ref<string | null>(null)
 const edit = ref({a:'',b:'',aPort:0,bPort:0,color:'#568bb8',lineWidth:2,lineStyle:'solid' as 'solid'|'dashed'|'dotted'})
 const current = computed(() => store.activeLab)
@@ -98,7 +108,7 @@ const edges = computed(() => current.value?.links.filter(link=>geometry.value.ha
 // After adding/removing a cable, Vue Flow must remeasure DOM handles.
 const internalsKey = computed(() => `${store.labID}:${current.value?.nodes.map(n=>`${n.id}:${n.x},${n.y}`).join('|')}:${current.value?.links.map(l=>`${l.id}:${l.a}:${l.b}`).join('|')}`)
 watch(internalsKey,async()=>{await nextTick();updateNodeInternals((current.value?.nodes || []).map(n=>n.id))},{flush:'post'})
-watch(()=>store.labID,async()=>{firstCableNode.value=null;await nextTick();void fitView({padding:.22,duration:250})})
+watch(()=>store.labID,async()=>{firstCableNode.value=null;selectedOnCanvas.value=[];await nextTick();void fitView({padding:.22,duration:250})})
 const startName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.a)?.name || '')
 const endName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.b)?.name || '')
 const firstPorts = computed(() => availablePorts(current.value?.nodes||[],current.value?.links||[],pending.value?.a||''))
@@ -143,20 +153,13 @@ async function saveLink() {
   finally {saving.value=false}
 }
 async function deleteLink() {if(!editingID.value || !confirm('Отключить этот кабель?'))return;await store.disconnect(editingID.value);editingID.value=null}
-async function dragStopped(event:{node:{id:string,position:{x:number,y:number}}}) {
-  if(event.node.id.startsWith('annotation:')){
-    const id=event.node.id.slice('annotation:'.length)
-    const annotation=current.value?.annotations?.find(item=>item.id===id)
-    if(annotation&&(Math.round(annotation.x)!==Math.round(event.node.position.x)||Math.round(annotation.y)!==Math.round(event.node.position.y))){
-      const {id:_id,...fields}=annotation
-      await store.updateAnnotation(id,{...fields,x:Math.round(event.node.position.x),y:Math.round(event.node.position.y)})
-    }
-    return
-  }
-  const node=current.value?.nodes.find(n=>n.id===event.node.id)
-  if(!node||panMode.value)return
-  if(Math.round(node.x)!==Math.round(event.node.position.x)||Math.round(node.y)!==Math.round(event.node.position.y))
-    await store.moveNode(node.id,event.node.position.x,event.node.position.y)
+async function dragStopped(event:{node:{id:string;position:{x:number;y:number}};nodes?:Array<{id:string;position:{x:number;y:number}}>}){
+  if(panMode.value||movingGroup.value)return
+  const dragged=event.nodes?.length?event.nodes:[event.node]
+  movingGroup.value=true
+  try{
+    await store.moveTopologyItems(dragged.map(node=>({id:node.id,x:node.position.x,y:node.position.y})))
+  }finally{movingGroup.value=false}
 }
 function picked(event:{node:{id:string}}) {
   if(panMode.value)return
@@ -181,7 +184,7 @@ function closeEditor(){editingID.value=null}
     <VueFlow id="netlab-topology" :nodes="nodes" :edges="edges" :nodes-draggable="!panMode" :nodes-connectable="!panMode"
       :elements-selectable="!panMode" :pan-on-drag="panMode" :selection-on-drag="!panMode"
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
-      @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="canvasClick">
+      @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="canvasClick" @selection-change="selectionChanged">
       <Background pattern-color="var(--grid)" :gap="20" :size="1" />
       <template #node-device="data"><DeviceNode :data="data.data" /></template>
       <template #node-annotation="data"><AnnotationNode :data="data.data" /></template>
@@ -196,12 +199,15 @@ function closeEditor(){editingID.value=null}
       <button type="button" title="Добавить текст" @click="newAnnotation('text')"><Type :size="17"/></button>
       <button type="button" title="Добавить примечание" @click="newAnnotation('note')"><StickyNote :size="17"/></button>
       <button type="button" title="Показать всю топологию" @click="fitView({padding:.2,duration:250})"><Scan :size="17"/></button>
+      <span v-if="selectedDevices.length>1" class="canvas-selection-count">Выбрано: {{selectedDevices.length}}</span>
+      <button v-if="selectedDevices.length>1" type="button" title="Действия с выбранными устройствами" @click="bulkSelectedDevices"><MousePointer2 :size="16"/> Действия</button>
     </div>
     <div class="canvas-scale" aria-label="Масштаб полотна">
       <button type="button" title="Уменьшить" @click="zoomOut({duration:150})"><Minus :size="16"/></button>
       <button type="button" title="Увеличить" @click="zoomIn({duration:150})"><Plus :size="16"/></button>
       <button type="button" title="Показать всё" @click="fitView({padding:.2,duration:250})"><Maximize :size="16"/></button>
     </div>
+    <div v-if="!panMode&&!cableMode" class="canvas-selection-hint">Shift + перетаскивание — выделить рамкой · Ctrl/Cmd + клик — несколько устройств</div>
     <div v-if="cableMode" class="canvas-cable-hint"><CableIcon :size="14"/> {{firstCableNode?'Выберите второе устройство':'Выберите первое устройство'}} <button title="Отменить" @click="cableMode=false;firstCableNode=null"><X :size="13"/></button></div>
     <div v-if="!current?.nodes.length" class="canvas-empty"><MonitorPlay :size="30"/><strong>Лаборатория пуста</strong><span>Нажмите «+», чтобы добавить устройство</span></div>
     <div v-if="annotationOpen" class="dialog-overlay" @click.self="annotationOpen=false">
