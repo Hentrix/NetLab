@@ -15,7 +15,7 @@ if [[ "${ROOT}" == /opt/netlab ]]; then echo 'Установщик запуще�
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
-  ca-certificates golang-go qemu-system-x86 qemu-utils openvswitch-switch iproute2 openssl curl vpcs
+  ca-certificates golang-go qemu-system-x86 qemu-utils openvswitch-switch iproute2 openssl curl vpcs novnc
 
 if ! id netlab-vm &>/dev/null; then
   useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin netlab-vm
