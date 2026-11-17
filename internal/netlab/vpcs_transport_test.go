@@ -1,6 +1,7 @@
 package netlab
 
 import (
+	"unsafe"
 	"bytes"
 	"os/exec"
 	"strconv"
@@ -60,5 +61,22 @@ func TestVPCSUDPArgumentPorts(t *testing.T) {
 	}
 	if vpcsMACOffset("one") != vpcsMACOffset("one") {
 		t.Fatal("MAC offset must be deterministic")
+	}
+}
+
+func TestVPCSPTYDisablesKernelGeneratedSIGINT(t *testing.T) {
+	master, slave, err := openVPCSPTY()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer master.Close()
+	defer slave.Close()
+	var term syscall.Termios
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&term)))
+	if errno != 0 {
+		t.Fatal(errno)
+	}
+	if term.Lflag&syscall.ISIG != 0 {
+		t.Fatal("PTY must not generate SIGINT on Ctrl+C")
 	}
 }
