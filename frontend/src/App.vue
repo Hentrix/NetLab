@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { LayoutDashboard, HardDrive, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, GitBranch, Pencil, LogOut, X, ChevronDown } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
-import { portLabel } from '@/api/client'
+import { api, portLabel } from '@/api/client'
 import type { Device, Template, PortSpec } from '@/types'
 import TopologyCanvas from '@/components/TopologyCanvas.vue'
 import SystemOverview from '@/components/SystemOverview.vue'
@@ -15,6 +15,24 @@ const page=ref<'labs'|'images'|'system'>('labs')
 const theme=ref<'light' | 'dark'>(localStorage.getItem('netlab-theme')==='dark'?'dark':'light')
 const newLab=ref('');const createLabOpen=ref(false)
 const addOpen=ref(false)
+const requestedNodePosition=ref<{x:number;y:number}|null>(null)
+const deviceLogOpen=ref(false)
+const deviceLogLoading=ref(false)
+const deviceLogName=ref('')
+const deviceLogOutput=ref('')
+async function showDeviceLog(device:Device){
+  const lab=store.activeLab
+  if(!lab)return
+  deviceLogOpen.value=true
+  deviceLogLoading.value=true
+  deviceLogName.value=device.name
+  deviceLogOutput.value=''
+  try{
+    const response=await api<{output:string}>(store.token,`labs/${lab.id}/nodes/${device.id}/log`)
+    deviceLogOutput.value=response.output||'Журнал пуст'
+  }catch(error){deviceLogOutput.value=(error as Error).message}
+  finally{deviceLogLoading.value=false}
+}
 const batchCount=ref(1)
 const templateID=ref('vpcs');const imageID=ref('');const deviceName=ref('');const nicCount=ref(4)
 const inFlight=ref(false)
@@ -124,6 +142,8 @@ function toggleTheme(){theme.value=dark.value?'light':'dark';document.documentEl
 async function login(){store.authenticate(tokenEntry.value);await store.bootstrap()}
 async function submitLab(){if(!newLab.value.trim())return;await store.createLab(newLab.value);createLabOpen.value=false;newLab.value=''}
 function openAdd(){
+  requestedNodePosition.value=null
+
   batchCount.value=1
   profileSearch.value=''
   templateID.value=store.templates[0]?.id||'vpcs'
@@ -131,6 +151,10 @@ function openAdd(){
   deviceName.value=selectedTemplate.value?.name||'Устройство'
   nicCount.value=selectedTemplate.value?.nicCount||4
   addOpen.value=true
+}
+function openAddAt(position:{x:number;y:number}){
+  openAdd()
+  requestedNodePosition.value=position
 }
 function addFromImage(image:string){
   if(!store.activeLab){store.failure='Сначала выберите лабораторию';return}
@@ -150,7 +174,7 @@ async function addDevice(){
     const idx=store.activeLab.nodes.length
     const payload: Partial<Device>={name:deviceName.value.trim()||t.name,kind:t.kind||'router',engine:t.engine||'qemu',imageId:t.engine==='vpcs'?'':imageID.value,
       nicCount:t.engine==='vpcs'?1:nicCount.value,portStyle:t.portStyle||'eth',ram:t.ram||256,cpus:t.cpus||1,
-      nicModel:t.nicModel||'e1000',diskBus:t.diskBus||'ide',x:100+(idx%5)*185,y:130+Math.floor(idx/5)*150}
+      nicModel:t.nicModel||'e1000',diskBus:t.diskBus||'ide',x:requestedNodePosition.value?.x??(100+(idx%5)*185),y:requestedNodePosition.value?.y??(130+Math.floor(idx/5)*150)}
     if(batchCount.value>1)await store.addNodesBatch(payload,batchCount.value)
     else await store.addNode(payload)
     addOpen.value=false
@@ -180,7 +204,7 @@ async function removeCable(id:string){if(window.confirm('Отключить Ethe
 async function powerLab(op:'start'|'stop'){await store.labPower(op)}
 function kindIcon(kind?:string){return kind==='pc'?'pc':kind==='firewall'?'shield':kind==='server'?'server':'router'}
 function consoleOpen(device:Device){terminal.value?.open(device)}
-type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'
+type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'|'log'
 async function deviceContextAction(payload:{id:string;action:DeviceContextAction}){
   // Resolve the current node by ID: polling can replace store objects while a menu is open.
   const device=store.activeLab?.nodes.find(node=>node.id===payload.id)
@@ -194,6 +218,7 @@ async function deviceContextAction(payload:{id:string;action:DeviceContextAction
       case 'hardware': editHardware(device);break
       case 'ports': editPorts(device);break
       case 'icon': await openIconPicker(device);break
+      case 'log': await showDeviceLog(device);break
       case 'delete': await deleteNode(device);break
     }
   }catch(error){store.failure=(error as Error).message}
@@ -231,7 +256,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
               <span><b>{{node.name}}</b><small>{{imageName(node)}}</small></span><i :class="node.status"/>
             </button></template>
           </div></div><button class="add-row" @click="openAdd"><Plus :size="16"/> Добавить устройство</button></aside>
-          <TopologyCanvas @console="consoleOpen" @add="openAdd" @bulk="openBulkFromCanvas" @device-action="deviceContextAction" />
+          <TopologyCanvas @console="consoleOpen" @add="openAdd" @add-at="openAddAt" @bulk="openBulkFromCanvas" @device-action="deviceContextAction" />
           <aside class="inspector"><template v-if="store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
             <template v-if="selectedTab==='overview'"><div class="inspector-content"><label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong><label>vCPU / RAM</label><strong>{{store.selectedNode.engine==='vpcs'?'—':`${store.selectedNode.cpus||1} / ${store.selectedNode.ram||256} МБ`}}</strong><label>Интерфейсы</label><strong>{{store.selectedNode.nicCount||16}}</strong></div><div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
             <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{cable.aPort}} ↔ {{cable.bPort}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
@@ -245,6 +270,14 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
       <div v-if="store.failure" role="alert" class="error-toast" @click="store.failure=''">{{store.failure}} <X :size="16"/></div>
     </main>
     <TerminalDock ref="terminal" :theme="theme" />
+    <div v-if="deviceLogOpen" class="dialog-overlay" @click.self="deviceLogOpen=false">
+      <div class="dialog-card device-log-dialog" role="dialog" :aria-label="'Журнал '+deviceLogName">
+        <h2>Журнал · {{deviceLogName}}</h2>
+        <p v-if="deviceLogLoading">Загрузка журнала…</p>
+        <pre v-else>{{deviceLogOutput}}</pre>
+        <div class="dialog-actions"><button type="button" @click="deviceLogOpen=false">Закрыть</button></div>
+      </div>
+    </div>
     <div v-if="hardwareOpen&&hardwareDraft" class="dialog-overlay" @click.self="!hardwareSaving&&(hardwareOpen=false)">
       <form class="dialog-card hardware-dialog" @submit.prevent="saveHardware">
         <h2>Параметры QEMU</h2>
