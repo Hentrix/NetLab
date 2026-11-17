@@ -14,6 +14,35 @@ const isoFile=ref<File|null>(null)
 const uploadBusy=ref(false)
 const preparing=ref(false)
 const publishing=ref(false)
+const revising=ref(false)
+const revisionImageID=ref('')
+const revisionName=ref('')
+const revisionVersion=ref('')
+const revisionSource=computed(()=>published.value.find(image=>image.id===revisionImageID.value))
+function chooseRevision(id:string){
+ revisionImageID.value=id
+ const image=published.value.find(item=>item.id===id)
+ if(image){
+  revisionName.value=image.name
+  revisionVersion.value=''
+ }
+}
+async function createRevision(){
+ const source=revisionSource.value
+ if(!source||revising.value||!revisionName.value.trim()||!revisionVersion.value.trim())return
+ revising.value=true;status.value=''
+ try{
+  const result=await store.createWorkshopRevision(source.id,revisionName.value.trim(),revisionVersion.value.trim())
+  publishNodeID.value=result.lab.id+':'+result.node.id
+  name.value=revisionName.value.trim()
+  family.value=source.family||''
+  category.value=source.category||'other'
+  version.value=revisionVersion.value.trim()
+  status.value='Черновая VM создана из готового шаблона. Внесите обновления, остановите VM и опубликуйте новую версию.'
+  emit('open-lab')
+ }catch(e){store.failure=(e as Error).message}
+ finally{revising.value=false}
+}
 const publishNodeID=ref('')
 const name=ref('Новая подготовка')
 const family=ref('Windows Server')
@@ -143,6 +172,22 @@ async function refresh(){
         </button>
       </article>
     </div>
+    <article class="workshop-card workshop-revision-card">
+      <h2><HardDrive :size="18"/> Новая версия из готового шаблона</h2>
+      <p>Повторная установка ISO не нужна. NetLab создаст отдельную копию QCOW2 и подготовительную лабораторию; исходная версия останется неизменной.</p>
+      <div class="workshop-grid">
+        <label>Исходный шаблон
+          <UiSelect :model-value="revisionImageID" @update:model-value="chooseRevision(String($event))" aria-label="Исходный шаблон для ревизии">
+            <option value="">Выберите опубликованный образ</option>
+            <option v-for="image in published" :key="image.id" :value="image.id">{{image.family||image.name}} · {{image.version||'Без версии'}}</option>
+          </UiSelect>
+        </label>
+        <label>Название новой VM<input v-model="revisionName" maxlength="80" placeholder="Debian 13 с обновлениями"/></label>
+        <label>Новая версия<input v-model="revisionVersion" maxlength="80" placeholder="13.1, 2022-r2…" /></label>
+        <div class="workshop-revision-actions"><button class="primary" type="button" :disabled="!revisionSource||!revisionName.trim()||!revisionVersion.trim()||revising" @click="createRevision"><Plus :size="16"/> {{revising?'Создание…':'Создать ревизию'}}</button></div>
+      </div>
+      <small v-if="revisionSource">Исходная система: {{revisionSource.family}} {{revisionSource.version}}. Для публикации новой версии нужно штатно выключить подготовительную VM.</small>
+    </article>
     <h2>Каталог подготовленных систем</h2>
     <div v-if="families.length" class="workshop-catalogue">
       <article v-for="group in families" :key="group.category+':'+group.family" class="workshop-family">
@@ -150,6 +195,7 @@ async function refresh(){
         <h3>{{group.family}}</h3>
         <div v-for="image in group.images" :key="image.id" class="workshop-version">
           <strong>{{image.version||image.name}}</strong><span>{{image.name}}</span><span>{{image.format?.toUpperCase()}}</span>
+          <button class="workshop-revision-link" type="button" @click="chooseRevision(image.id)">Создать новую версию</button>
         </div>
       </article>
     </div>
@@ -180,5 +226,12 @@ async function refresh(){
 .workshop-family small{color:var(--muted)}
 .workshop-version{display:grid;gap:2px;padding:8px 0;border-top:1px solid var(--border);font-size:12px}
 .workshop-version span{font-size:11px;color:var(--muted)}
+.workshop-revision-card{gap:12px}
+.workshop-revision-card p{font-size:12px;color:var(--muted);margin:0}
+.workshop-revision-card .workshop-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.workshop-revision-card .workshop-grid label:first-child{grid-column:auto}
+.workshop-revision-actions{display:flex;align-items:flex-end}
+.workshop-revision-link{justify-self:start;background:transparent;color:var(--accent);border:0;padding:4px 0;cursor:pointer;font-size:11px}
+@media(max-width:720px){.workshop-revision-card .workshop-grid{grid-template-columns:1fr}}
 @media(max-width:1100px){.workshop-steps{grid-template-columns:1fr}}
 </style>
