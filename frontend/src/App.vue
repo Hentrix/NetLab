@@ -91,7 +91,7 @@ async function addDevice(){
   inFlight.value=true
   try{
     const idx=store.activeLab.nodes.length
-    const payload={name:deviceName.value.trim()||t.name,kind:t.kind||'router',engine:t.engine||'qemu',imageId:t.engine==='vpcs'?'':imageID.value,
+    const payload: Partial<Device>={name:deviceName.value.trim()||t.name,kind:t.kind||'router',engine:t.engine||'qemu',imageId:t.engine==='vpcs'?'':imageID.value,
       nicCount:t.engine==='vpcs'?1:nicCount.value,portStyle:t.portStyle||'eth',ram:t.ram||256,cpus:t.cpus||1,
       nicModel:t.nicModel||'e1000',diskBus:t.diskBus||'ide',x:100+(idx%5)*185,y:130+Math.floor(idx/5)*150}
     if(batchCount.value>1)await store.addNodesBatch(payload,batchCount.value)
