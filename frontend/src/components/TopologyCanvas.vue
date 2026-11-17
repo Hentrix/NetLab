@@ -231,8 +231,24 @@ const current = computed(() => store.activeLab)
 const annotationOpen=ref(false)
 const annotationID=ref<string|null>(null)
 const annotationSaving=ref(false)
+const rememberedBackground=ref('#fff4c4')
+function setAnnotationTransparency(value:boolean){
+  if(value){
+    if(annotationDraft.value.background!=='transparent')rememberedBackground.value=annotationDraft.value.background||'#ffffff'
+    annotationDraft.value.background='transparent'
+  }else{
+    annotationDraft.value.background=rememberedBackground.value
+  }
+}
+watch(()=>annotationOpen.value,open=>{
+  if(open&&annotationDraft.value.background!=='transparent')
+    rememberedBackground.value=annotationDraft.value.background||'#ffffff'
+})
+
 function onAnnotationBackground(event:Event){
-  annotationDraft.value.background=(event.target as HTMLInputElement).value
+  const color=(event.target as HTMLInputElement).value
+  rememberedBackground.value=color
+  annotationDraft.value.background=color
 }
 function fitAnnotationHeight(annotation:Omit<Annotation,'id'>):number{
   // Mirror the snapshot's line wrapping, with a larger safety margin for glyphs.
@@ -751,19 +767,21 @@ function closeEditor(){editingID.value=null}
       <form class="dialog-card annotation-dialog" @submit.prevent="saveAnnotation">
         <div class="dialog-heading"><StickyNote :size="18"/><strong>{{annotationID?'Редактировать':'Добавить'}} {{annotationDraft.kind==='note'?'примечание':'текст'}}</strong></div>
         <label>Текст<textarea v-model="annotationDraft.text" maxlength="1000" rows="3"/></label>
-        <div class="dialog-columns"><label>Ширина, px<input v-model.number="annotationDraft.width" type="number" min="80" max="1200" required/></label>
-        <label>Высота, px<input v-model.number="annotationDraft.height" type="number" min="36" max="800" required/></label></div>
+        <div class="dialog-columns"><label>Ширина, px<input v-model.number="annotationDraft.width" type="number" :min="annotationDraft.kind==='note'?144:96" max="1200" required/></label>
+        <label>Высота, px<input v-model.number="annotationDraft.height" type="number" :min="annotationDraft.kind==='note'?58:36" max="800" required/></label></div>
         <div class="dialog-columns"><label>Цвет текста<input v-model="annotationDraft.color" type="color"/></label>
         <label>Размер шрифта<input v-model.number="annotationDraft.fontSize" type="number" min="9" max="72" required/></label></div>
-        <div class="dialog-columns"><label>Цвет заливки<input type="color" :value="annotationDraft.background==='transparent'?'#ffffff':annotationDraft.background" @input="onAnnotationBackground"/></label>
+        <div class="dialog-columns"><label>Цвет заливки<input type="color" :disabled="annotationDraft.background==='transparent'" :value="annotationDraft.background==='transparent'?rememberedBackground:annotationDraft.background" @input="onAnnotationBackground"/></label>
         <label>Цвет рамки<input v-model="annotationDraft.borderColor" type="color"/></label></div>
-        <div class="dialog-columns"><label>Толщина рамки<input v-model.number="annotationDraft.borderWidth" type="number" min="0" max="12"/></label>
+        <label class="annotation-transparency"><input type="checkbox" :checked="annotationDraft.background==='transparent'"
+          @change="setAnnotationTransparency(($event.target as HTMLInputElement).checked)"/> Без заливки (прозрачный фон)</label>
+        <div class="dialog-columns"><label>Толщина рамки<input v-model.number="annotationDraft.borderWidth" type="number" min="0" max="4"/></label>
         <label>Подгонка высоты<button type="button" @click="fitDraftHeight">Подогнать под текст</button></label></div>
-        <div class="dialog-columns"><label>Фон<UiSelect v-model="annotationDraft.background"><option value="transparent">Прозрачный</option><option value="#fff4c4">Жёлтый</option><option value="#e4f1ff">Голубой</option><option value="#f2eaff">Фиолетовый</option><option value="#ffffff">Белый</option></UiSelect></label>
+        <div class="dialog-columns"><label>Готовые цвета<UiSelect v-model="annotationDraft.background"><option value="transparent">Прозрачный</option><option value="#fff4c4">Жёлтый</option><option value="#e4f1ff">Голубой</option><option value="#f2eaff">Фиолетовый</option><option value="#ffffff">Белый</option></UiSelect></label>
         <label>Выравнивание<UiSelect v-model="annotationDraft.align"><option value="left">Слева</option><option value="center">По центру</option><option value="right">Справа</option></UiSelect></label></div>
         <div class="annotation-format"><label><input v-model="annotationDraft.bold" type="checkbox"/> Жирный</label><label><input v-model="annotationDraft.italic" type="checkbox"/> Курсив</label><label><input v-model="annotationDraft.underline" type="checkbox"/> Подчёркнутый</label></div>
         <div class="dialog-actions"><button v-if="annotationID" type="button" class="cable-delete" @click="deleteAnnotation"><Trash2 :size="14"/> Удалить</button><button type="button" @click="annotationOpen=false">Отмена</button>
-          <button class="primary" :disabled="annotationSaving||annotationDraft.width<80||annotationDraft.width>1200||annotationDraft.height<36||annotationDraft.height>800">Сохранить</button></div>
+          <button class="primary" :disabled="annotationSaving||annotationDraft.width<(annotationDraft.kind==='note'?144:96)||annotationDraft.width>1200||annotationDraft.height<(annotationDraft.kind==='note'?58:36)||annotationDraft.height>800">Сохранить</button></div>
       </form>
     </div>
     <div v-if="pending" class="dialog-overlay" @click.self="pending=null">
