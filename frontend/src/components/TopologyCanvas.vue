@@ -648,7 +648,7 @@ function picked(event:NodeMouseEvent) {
     else if(firstCableNode.value!==id)chooseEnds(firstCableNode.value,id)
     return
   }
-  const additive=event.event.ctrlKey||event.event.metaKey
+  const additive=event.event.ctrlKey||event.event.metaKey||event.event.shiftKey
   // The input must include the inspector's currently selected device as well
   // as the canvas selection; otherwise the second Ctrl-click loses the first.
   const before=[...new Set([...selectedOnCanvas.value,...store.selectedDeviceIDs])]

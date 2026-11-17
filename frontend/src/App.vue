@@ -194,7 +194,7 @@ const sidebarMenuIsGroup=computed(()=>!!sidebarMenu.value&&store.selectedDeviceI
 function closeSidebarMenu(){sidebarMenu.value=null}
 function selectSidebarNode(device:Device,event:MouseEvent){
   closeSidebarMenu()
-  const additive=event.ctrlKey||event.metaKey
+  const additive=event.ctrlKey||event.metaKey||event.shiftKey
   store.clickDeviceInSidebar(device.id,additive)
   if(!additive)topology.value?.centerDevice(device.id)
 }
@@ -350,6 +350,14 @@ async function removeCable(id:string){if(window.confirm('Отключить Ethe
 async function powerLab(op:'start'|'stop'){await store.labPower(op)}
 function kindIcon(kind?:string){return kind==='pc'?'pc':kind==='firewall'?'shield':kind==='server'?'server':'router'}
 function consoleOpen(device:Device){terminal.value?.open(device)}
+function logout(){
+  // Legacy logout always closes every terminal before dropping the API token.
+  terminal.value?.closeAll()
+  closeSidebarMenu()
+  deviceLogOpen.value=false
+  store.logout()
+  page.value='labs'
+}
 type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'|'log'
 async function deviceContextAction(payload:{id:string;action:DeviceContextAction}){
   // Resolve the current node by ID: polling can replace store objects while a menu is open.
@@ -397,7 +405,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
     </aside>
     <main class="main-view">
       <header class="top-bar"><span class="breadcrumbs">NETLAB / <strong>{{page==='labs'?(store.activeLab?.name||'Лаборатории'):page==='images'?'Образы':'Система'}}</strong></span>
-        <div class="top-actions"><span class="small-status"><i :class="{ok:store.live}"/>{{liveStatus}}</span><button title="Светлая / тёмная тема" @click="toggleTheme"><Sun v-if="dark" :size="17"/><Moon v-else :size="17"/>{{dark?'Светлая':'Тёмная'}}</button><button title="Выйти" @click="store.logout()"><LogOut :size="17"/></button></div>
+        <div class="top-actions"><span class="small-status"><i :class="{ok:store.live}"/>{{liveStatus}}</span><button title="Светлая / тёмная тема" @click="toggleTheme"><Sun v-if="dark" :size="17"/><Moon v-else :size="17"/>{{dark?'Светлая':'Тёмная'}}</button><button title="Выйти" @click="logout"><LogOut :size="17"/></button></div>
       </header>
       <template v-if="!store.token">
         <form class="login-card" @submit.prevent="login"><Router :size="34"/><h1>Вход в NetLab</h1><p>Токен администратора хранится только в текущей вкладке браузера.</p><label>Токен<input v-model="tokenEntry" type="password" autocomplete="off" required/></label><button class="primary" type="submit">Войти</button></form>
