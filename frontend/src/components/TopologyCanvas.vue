@@ -502,7 +502,8 @@ const nodes = computed(() => [
     draggable:!panMode.value,selectable:!panMode.value,
     data:{device,anchors:portsByNode.value.get(device.id)||[],
       hovered:hoveredDeviceID.value===device.id,
-      connected:connectedHoverDevices.value.has(device.id)}
+      connected:connectedHoverDevices.value.has(device.id),
+      selected:selectedOnCanvas.value.includes(device.id)}
   }))||[]),
   ...(current.value?.annotations||[]).map(annotation=>{
     const preview=resizePreview.value?.id===annotation.id?resizePreview.value.rect:null
