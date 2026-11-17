@@ -80,6 +80,20 @@ func TestWorkshopBlankDiskAndPublishVersion(t *testing.T){
  status,body=httpCall(t,s,"GET","/api/templates",nil,true)
  assertStatus(t,status,200,body)
  if !strings.Contains(string(body),"image:"+image.ID)||!strings.Contains(string(body),"Windows Server 2022"){t.Fatalf("published template not listed: %s",body)}
+ status,body=httpCall(t,s,"POST","/api/workshop/publish",payload,true)
+ if status!=409 {t.Fatalf("duplicate published version accepted: %d %s",status,body)}
+ // A new version is an independent revision with its own image ID.
+ nextPayload:=[]byte(`{"labId":"`+lab.ID+`","nodeId":"`+node.ID+`","name":"Windows Server 2025","category":"server","family":"Windows Server","version":"2025"}`)
+ status,body=httpCall(t,s,"POST","/api/workshop/publish",nextPayload,true)
+ assertStatus(t,status,201,body)
+ var revision Image
+ if err:=json.Unmarshal(body,&revision);err!=nil{t.Fatal(err)}
+ if revision.ID==image.ID {t.Fatal("new revision reused base image ID")}
+ update:=[]byte(`{"name":"Windows Server","category":"server","family":"Windows Server","version":"2022"}`)
+ status,body=httpCall(t,s,"PATCH","/api/images/"+revision.ID,update,true)
+ if status!=409 {t.Fatalf("conflicting version metadata accepted: %d %s",status,body)}
+ status,body=httpCall(t,s,"PATCH","/api/images/"+image.ID,update,true)
+ assertStatus(t,status,200,body)
  status,body=httpCall(t,s,"DELETE","/api/images/"+base.ID,nil,true)
  if status!=409{t.Fatalf("in-use preparation image deleted: %d %s",status,body)}
 }
@@ -124,4 +138,51 @@ func TestPublishOnlyStoppedWorkshopDraft(t *testing.T) {
  s.engine.mu.Unlock()
  status,body=httpCall(t,s,"POST","/api/workshop/publish",payload(lab.Nodes[1].ID),true)
  if status!=409{t.Fatalf("failed VM accepted: %d %s",status,body)}
+}
+
+func TestDeleteImageRollsBackOnStateSaveFailure(t *testing.T) {
+ s:=newTestServer(t)
+ id:=newID()
+ image:=Image{ID:id,Name:"Unused",Format:"qcow2",Kind:"disk"}
+ path:=filepath.Join(s.data,"images",id+".qcow2")
+ if err:=os.WriteFile(path,[]byte("base disk"),0600);err!=nil{t.Fatal(err)}
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,image)
+ if err:=s.store.save();err!=nil{t.Fatal(err)}
+ originalStatePath:=s.store.path
+ blockedPath:=filepath.Join(s.data,"blocked-state")
+ if err:=os.MkdirAll(blockedPath,0750);err!=nil{t.Fatal(err)}
+ s.store.path=blockedPath // atomic rename to an existing directory fails
+ s.store.mu.Unlock()
+ code,body:=httpCall(t,s,"DELETE","/api/images/"+id,nil,true)
+ if code!=500 {t.Fatalf("expected save error, got %d %s",code,body)}
+ if data,err:=os.ReadFile(path);err!=nil||string(data)!="base disk"{t.Fatalf("image lost after rollback: %q %v",data,err)}
+ if _,err:=os.Stat(path+".deleting");!os.IsNotExist(err){t.Fatalf("staged file remains: %v",err)}
+ s.store.mu.Lock()
+ if findImage(&s.store.State,id)==nil{t.Fatal("image disappeared from in-memory state")}
+ s.store.path=originalStatePath
+ s.store.mu.Unlock()
+ code,body=httpCall(t,s,"DELETE","/api/images/"+id,nil,true)
+ assertStatus(t,code,200,body)
+ if _,err:=os.Stat(path);!os.IsNotExist(err){t.Fatalf("deleted file still present: %v",err)}
+ if _,err:=os.Stat(path+".deleting");!os.IsNotExist(err){t.Fatalf("staged file still present: %v",err)}
+}
+
+func TestRecoverInterruptedImageDeletionOnStartup(t *testing.T) {
+ s:=newTestServer(t)
+ id:=newID()
+ image:=Image{ID:id,Name:"Recoverable",Format:"qcow2",Kind:"disk"}
+ path:=filepath.Join(s.data,"images",id+".qcow2")
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,image)
+ if err:=s.store.save();err!=nil{t.Fatal(err)}
+ s.store.mu.Unlock()
+ if err:=os.WriteFile(path,[]byte("recoverable disk"),0600);err!=nil{t.Fatal(err)}
+ if err:=os.Rename(path,path+".deleting");err!=nil{t.Fatal(err)}
+ recovered,err:=NewServer(s.data,s.web,testToken)
+ if err!=nil{t.Fatal(err)}
+ if recovered==nil{t.Fatal("missing recovered server")}
+ data,err:=os.ReadFile(path)
+ if err!=nil||string(data)!="recoverable disk"{t.Fatalf("image was not recovered: %q %v",data,err)}
+ if _,err:=os.Stat(path+".deleting");!os.IsNotExist(err){t.Fatalf("tombstone not cleared: %v",err)}
 }

@@ -14,6 +14,22 @@ import (
  "time"
 )
 
+// Restore images whose deletion was interrupted before the state commit.
+// Only catalogued images are restored; unreferenced tombstones are left for
+// an administrator to inspect rather than removed without confirmation.
+func recoverStagedImageDeletes(data string, images []Image) error {
+ for _, img := range images {
+  if !validID(img.ID) { continue }
+  switch img.Format { case "qcow2", "qcow", "raw", "img", "iso": default: continue }
+  path:=filepath.Join(data,"images",img.ID+"."+img.Format)
+  if _,err:=os.Stat(path);err==nil { continue } else if !errors.Is(err,os.ErrNotExist) { return err }
+  staged:=path+".deleting"
+  if _,err:=os.Stat(staged);errors.Is(err,os.ErrNotExist) { continue } else if err!=nil { return err }
+  if err:=os.Rename(staged,path);err!=nil { return fmt.Errorf("восстановление образа %s: %w",img.ID,err) }
+ }
+ return nil
+}
+
 // ISO9660 primary or supplementary volume descriptor (sector 16 onwards).
 // Reject renamed arbitrary files before attaching them as a CD-ROM.
 func validateInstallerISO(path string) error {
@@ -47,6 +63,21 @@ func validateImageMetadata(name,category,family,version string) error {
  if !validImageText(family)||!validImageText(version){return errors.New("семейство/версия слишком длинные")}
  return nil
 }
+// A published category/family/version identifies one immutable catalog revision.
+// Renaming a version is allowed only if it does not collide with another image.
+func catalogVersionConflict(images []Image, exceptID, category, family, version string) bool {
+ family = strings.TrimSpace(family)
+ version = strings.TrimSpace(version)
+ if family == "" || version == "" { return false }
+ for _, image := range images {
+  if image.ID == exceptID || !image.Published || image.Draft || image.isISO() { continue }
+  if image.Category == category &&
+   strings.EqualFold(strings.TrimSpace(image.Family), family) &&
+   strings.EqualFold(strings.TrimSpace(image.Version), version) { return true }
+ }
+ return false
+}
+
 func (s *Server) createBlankImage(w http.ResponseWriter,r *http.Request){
  var req struct{Name string `json:"name"`; SizeGiB int `json:"sizeGiB"`}
  if !decode(w,r,&req){return}
@@ -80,6 +111,9 @@ func (s *Server) updateImageMetadata(w http.ResponseWriter,r *http.Request,id st
  defer s.store.mu.Unlock()
  img:=findImage(&s.store.State,id)
  if img==nil{fail(w,404,"образ не найден");return}
+ if img.Published && catalogVersionConflict(s.store.State.Images,id,req.Category,req.Family,req.Version) {
+  fail(w,409,"такая версия уже опубликована: выберите другую версию");return
+ }
  before:=*img
  img.Name=strings.TrimSpace(req.Name)
  img.Category=req.Category
@@ -94,6 +128,9 @@ func (s *Server) workshopAPI(w http.ResponseWriter,r *http.Request,p []string){
  if !decode(w,r,&req){return}
  if !validID(req.LabID)||!validID(req.NodeID){fail(w,400,"неверный ID");return}
  if err:=validateImageMetadata(req.Name,req.Category,req.Family,req.Version);err!=nil{fail(w,400,err.Error());return}
+ if strings.TrimSpace(req.Family)=="" || strings.TrimSpace(req.Version)=="" {
+  fail(w,400,"для публикации укажите семейство и версию");return
+ }
  if _,err:=exec.LookPath("qemu-img");err!=nil{fail(w,503,"требуется qemu-img");return}
  // Keep the state lock while converting. This deliberately serializes QEMU
  // start/stop with snapshot publishing, avoiding corruption from live writes.
@@ -108,6 +145,9 @@ func (s *Server) workshopAPI(w http.ResponseWriter,r *http.Request,p []string){
  base:=findImage(&s.store.State,node.ImageID)
  if base==nil || base.isISO() || !base.Draft {
   fail(w,409,"можно публиковать только подготовительную VM с черновым диском");return
+ }
+ if catalogVersionConflict(s.store.State.Images,"",req.Category,req.Family,req.Version) {
+  fail(w,409,"такая версия уже опубликована: укажите новую версию");return
  }
  status,_:=s.engine.Status(req.LabID,req.NodeID)
  if status!="stopped" {
