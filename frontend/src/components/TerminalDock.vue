@@ -191,11 +191,9 @@ defineExpose({open})
       <div class="term-header-name"><TerminalSquare :size="18"/> Консоли NetLab</div>
       <div class="term-actions"><button title="Свернуть" @click="minimized=true"><Minus :size="16"/></button><button title="Развернуть" @click="maximized=!maximized"><Maximize2 :size="15"/></button><button title="Закрыть все консоли" @click="closeAll"><X :size="17"/></button></div>
     </div>
-    <template>
-      <nav class="term-tabs" v-show="!minimized"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @click="select(s.id)"><i :class="s.status"/>{{s.name}}</button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
+    <nav class="term-tabs" v-show="!minimized"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @click="select(s.id)"><i :class="s.status"/>{{s.name}}</button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
       <div class="terminal-hosts" v-show="!minimized"></div>
       <footer class="term-footer" v-show="!minimized"><span>{{active?.status==='online'?'Соединение активно':active?.status==='stopped'?'Устройство остановлено':'Подключение / ожидание API'}}</span><button @click="active&&select(active.id)"><RefreshCcw :size="13"/> Обновить отображение</button></footer>
-    </template>
     <button v-if="minimized" class="restore-console" @click="minimized=false">{{sessions.length}} вкладок · Развернуть</button>
   </div>
 </template>
