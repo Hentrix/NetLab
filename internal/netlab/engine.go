@@ -215,6 +215,53 @@ func (e *Engine) exec(bin string, args ...string) error {
 	return run(bin, args...)
 }
 
+// overlayBacking verifies that a runtime disk is a QCOW2 overlay linked to
+// exactly the selected base. It never rewrites an existing disk.
+func overlayBacking(overlay, base string) error {
+ info, err := exec.Command("qemu-img", "info", "--output=json", overlay).Output()
+ if err != nil { return fmt.Errorf("не удалось прочитать QCOW2 overlay: %w", err) }
+ var disk struct {
+  Format string `json:"format"`
+  Backing string `json:"backing-filename"`
+  FullBacking string `json:"full-backing-filename"`
+ }
+ if err := json.Unmarshal(info, &disk); err != nil { return fmt.Errorf("неверные метаданные QCOW2 overlay: %w", err) }
+ if disk.Format != "qcow2" { return fmt.Errorf("рабочий диск имеет формат %q вместо qcow2", disk.Format) }
+ actual := disk.FullBacking
+ if actual == "" {
+  actual = disk.Backing
+  if actual != "" && !filepath.IsAbs(actual) { actual = filepath.Join(filepath.Dir(overlay), actual) }
+ }
+ if actual == "" || filepath.Clean(actual) != filepath.Clean(base) {
+  return fmt.Errorf("рабочий диск привязан к другому базовому образу; проверьте backing-файл вручную")
+ }
+ return nil
+}
+
+// ensureNodeOverlay creates disk.qcow2 through a temporary file so a failed
+// qemu-img process cannot leave a damaged final disk. Existing guest changes
+// remain untouched; their backing is validated before the next start.
+func ensureNodeOverlay(overlay, base, format string, uid, gid int) error {
+ if info, err := os.Lstat(overlay); err == nil {
+  if !info.Mode().IsRegular() { return errors.New("рабочий диск должен быть обычным файлом") }
+  return overlayBacking(overlay, base)
+ } else if !errors.Is(err, os.ErrNotExist) {
+  return err
+ }
+ tmp := overlay + ".creating"
+ // A previous interrupted creation is always disposable; it is never used
+ // as a guest disk or mistaken for an existing overlay.
+ if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) { return err }
+ defer os.Remove(tmp)
+ if err := run("qemu-img", "create", "-f", "qcow2", "-F", format, "-b", base, tmp); err != nil { return err }
+ if err := overlayBacking(tmp, base); err != nil { return err }
+ if err := os.Chown(tmp, uid, gid); err != nil { return err }
+ if _, err := os.Lstat(overlay); err == nil {
+  return errors.New("рабочий диск появился во время создания: повторите запуск")
+ } else if !errors.Is(err, os.ErrNotExist) { return err }
+ return os.Rename(tmp, overlay)
+}
+
 // Start preallocates all configured virtual Ethernet NICs.  QEMU does not
 // require a reboot when an existing TAP is joined to or removed from OVS.
 func (e *Engine) Start(l Lab, n Node, img Image) error {
@@ -256,15 +303,8 @@ func (e *Engine) Start(l Lab, n Node, img Image) error {
 		return err
 	}
 	overlay := filepath.Join(runtime, "disk.qcow2")
-	if _, err := os.Stat(overlay); errors.Is(err, os.ErrNotExist) {
-		if err := run("qemu-img", "create", "-f", "qcow2", "-F", img.Format, "-b", base, overlay); err != nil {
-			return err
-		}
-		if err := os.Chown(overlay, uid, gid); err != nil {
-			return err
-		}
-	} else if err != nil {
-		return err
+	if err := ensureNodeOverlay(overlay, base, img.Format, uid, gid); err != nil {
+		return fmt.Errorf("диск VM %s: %w", n.Name, err)
 	}
 	// Every NIC has its own TAP, including initially disconnected ports.  The
 	// TAP does not connect to a physical bridge until the user adds a cable.
