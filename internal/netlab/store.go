@@ -15,7 +15,7 @@ type Store struct {
 }
 
 func LoadStore(path string) (*Store, error) {
-	s := &Store{path: path, State: State{Labs: []Lab{}, Images: []Image{}}}
+	s := &Store{path: path, State: State{Labs: []Lab{}, Images: []Image{}, Media: []InstallMedia{}, Catalog: []PreparedTemplate{}}}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
@@ -29,9 +29,9 @@ func LoadStore(path string) (*Store, error) {
 	if s.State.Labs == nil {
 		s.State.Labs = []Lab{}
 	}
-	if s.State.Images == nil {
-		s.State.Images = []Image{}
-	}
+	if s.State.Images == nil {s.State.Images = []Image{}}
+	if s.State.Media == nil {s.State.Media = []InstallMedia{}}
+	if s.State.Catalog == nil {s.State.Catalog = []PreparedTemplate{}}
 	for li := range s.State.Labs {
 		for ni := range s.State.Labs[li].Nodes {
 			s.State.Labs[li].Nodes[ni].Status = "stopped"

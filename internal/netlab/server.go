@@ -22,6 +22,7 @@ type Server struct {
 	engine           *Engine
 	data, web, token string
 	sampler          metricSampler
+	publishing map[string]bool // guarded by store.mu
 }
 
 func NewServer(data, web, token string) (*Server, error) {
@@ -32,7 +33,7 @@ func NewServer(data, web, token string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, dir := range []string{data, filepath.Join(data, "images"), filepath.Join(data, "runtime")} {
+	for _, dir := range []string{data, filepath.Join(data, "images"), filepath.Join(data, "runtime"), filepath.Join(data, "media")} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, err
 		}
@@ -46,7 +47,7 @@ func NewServer(data, web, token string) (*Server, error) {
 	if _, err := exec.LookPath("ovs-vsctl"); err == nil {
 		e.Recover(store.State.Labs)
 	}
-	return &Server{store: store, engine: e, data: data, web: web, token: token}, nil
+	return &Server{store: store, engine: e, data: data, web: web, token: token, publishing: make(map[string]bool)}, nil
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -161,8 +162,15 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, []map[string]any{{"id": "generic", "kind": "server", "name": "Generic x86 QEMU", "portStyle": "eth", "ram": 1024, "cpus": 1, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "mikrotik-chr", "kind": "router", "name": "MikroTik CHR", "portStyle": "ether", "ram": 256, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "ide"}, {"id": "cisco-iosv", "kind": "router", "name": "Cisco IOSv", "portStyle": "gi", "ram": 768, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "virtio"}, {"id": "linux", "kind": "pc", "name": "Linux VM", "portStyle": "eth", "ram": 2048, "cpus": 2, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "vpcs", "engine": "vpcs", "kind": "pc", "name": "VPCS", "portStyle": "eth", "ram": 128, "cpus": 1, "nicModel": "e1000", "nicCount": 1, "diskBus": "ide"}})
 		return
 	case "images":
+		if len(parts)==2 && parts[1]=="blank" && r.Method==http.MethodPost {
+			s.createBlankImage(w,r); return
+		}
 		s.imagesAPI(w, r, parts)
 		return
+	case "media":
+		s.mediaAPI(w,r,parts); return
+	case "catalog":
+		s.catalogAPI(w,r,parts); return
 	case "labs":
 		s.labsAPI(w, r, parts)
 		return
@@ -265,6 +273,9 @@ func (s *Server) imagesAPI(w http.ResponseWriter, r *http.Request, p []string) {
 	if len(p) == 2 && r.Method == "DELETE" && validID(p[1]) {
 		s.store.mu.Lock()
 		defer s.store.mu.Unlock()
+		for _, tpl := range s.store.State.Catalog {
+			if tpl.ImageID == p[1] {fail(w,409,"образ опубликован в каталоге: сначала удалите профиль"); return}
+		}
 		for _, lab := range s.store.State.Labs {
 			for _, n := range lab.Nodes {
 				if n.ImageID == p[1] {
@@ -357,8 +368,14 @@ func parseInt(s string) (int, error) { var v int; _, err := fmt.Sscanf(s, "%d", 
 
 // Each node selects its own emulation driver. Legacy saved nodes default to QEMU.
 func (s *Server) startNode(l Lab, n Node) error {
+	if s.publishing[key(l.ID,n.ID)] {return errors.New("образ устройства публикуется: дождитесь завершения операции")}
 	if n.Engine == "vpcs" {
 		return s.engine.StartVPCS(l, n)
+	}
+	if n.InstallISOID!="" {
+		found:=false
+		for _, media := range s.store.State.Media {if media.ID==n.InstallISOID {found=true; break}}
+		if !found {return errors.New("установочный ISO не найден")}
 	}
 	img := findImage(&s.store.State, n.ImageID)
 	if img == nil {
