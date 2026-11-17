@@ -14,3 +14,12 @@ test('console dock renders tab bar, terminal hosts and footer as active markup',
   // context and made all terminal content disappear while the header remained.
   assert.doesNotMatch(markup, /<template\s*>\s*<nav class="term-tabs"/)
 })
+
+test('terminal focus is independent of ResizeObserver fitting', () => {
+  assert.match(component, /function fitActive\(\)/)
+  const fitting = component.split('function fitActive()')[1].split('async function focusSession')[0]
+  assert.doesNotMatch(fitting, /focusRevision|\.focus\(/)
+  assert.match(component, /async function focusSession\(id:string\)/)
+  assert.match(component, /void focusSession\(id\)/)
+  assert.match(markup, /class="terminal-hosts" v-show="!minimized" @pointerdown="focusConsoleArea"/)
+})
