@@ -104,6 +104,39 @@ func (e *Engine) Status(lab, node string) (string, string) {
 	}
 	return "stopped", ""
 }
+// NodeBusy remains true until the QEMU/VPCS process has been reaped AND
+// its TAP/transport cleanup has finished. A stopped status alone is too
+// early to delete runtime disks or recycle TAP names.
+func (e *Engine) NodeBusy(lab, node string) bool {
+ e.mu.Lock()
+ defer e.mu.Unlock()
+ ins:=e.instances[key(lab,node)]
+ if ins==nil {return false}
+ if ins.status=="running" {return true}
+ if ins.done==nil {return false} // test-only instances without a process
+ select {
+ case <-ins.done: return false
+ default: return true
+ }
+}
+
+// CleanupChecked stops every node and reports failures before removing OVS
+// bridges. Do not mask a stuck child process and then delete its disk.
+func (e *Engine) CleanupChecked(l Lab) error {
+ var failures []string
+ for _,n:=range l.Nodes {
+  if err:=e.Stop(l.ID,n.ID);err!=nil {
+   failures=append(failures,n.Name+": "+err.Error())
+  }
+ }
+ if len(failures)>0 {return fmt.Errorf("остановка лаборатории: %s",strings.Join(failures,"; "))}
+ for _,link:=range l.Links {
+  if err:=e.exec("ovs-vsctl","--if-exists","del-br",bridgeName(link.ID));err!=nil {
+   return fmt.Errorf("очистка OVS: %w",err)
+  }
+ }
+ return nil
+}
 func (e *Engine) ReadConsoleSince(lab, node string, offset int64) ([]byte, int64, bool, error) {
 	e.mu.Lock()
 	i := e.instances[key(lab, node)]
@@ -514,9 +547,26 @@ func waitForInstanceStop(done <-chan struct{}, force func(), grace, afterKill ti
 func (e *Engine) Stop(lab, node string) error {
 	e.mu.Lock()
 	ins := e.instances[key(lab, node)]
-	if ins == nil || ins.status != "running" {
+	if ins == nil {
 		e.mu.Unlock()
 		return nil
+	}
+	if ins.status != "running" {
+		e.mu.Unlock()
+		if ins.done==nil {return nil}
+		select {
+		case <-ins.done: return nil
+		case <-time.After(5*time.Second):
+			return errors.New("процесс VM завершён, но очистка TAP ещё выполняется")
+		}
+	}
+	if ins.stopRequested {
+		e.mu.Unlock()
+		if ins.done==nil {return errors.New("остановка уже выполняется")}
+		select {
+		case <-ins.done: return nil
+		case <-time.After(5*time.Second): return errors.New("остановка VM ещё выполняется")
+		}
 	}
 	ins.stopRequested = true
 	e.mu.Unlock()
@@ -538,14 +588,7 @@ func (e *Engine) Stop(lab, node string) error {
 		}
 	}, 3*time.Second, 2*time.Second)
 }
-func (e *Engine) Cleanup(l Lab) {
-	for _, n := range l.Nodes {
-		_ = e.Stop(l.ID, n.ID)
-	}
-	for _, link := range l.Links {
-		_ = e.exec("ovs-vsctl", "--if-exists", "del-br", bridgeName(link.ID))
-	}
-}
+func (e *Engine) Cleanup(l Lab) { _ = e.CleanupChecked(l) }
 func (e *Engine) Recover(labs []Lab) {
 	// Only NetLab-owned interfaces from persisted records; never touch host uplinks.
 	for _, l := range labs {
