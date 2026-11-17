@@ -17,6 +17,51 @@ type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'i
 const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'add-at',position:{x:number;y:number}):void; (e:'bulk', ids:string[]):void; (e:'device-action', payload:{id:string;action:DeviceContextAction}):void; (e:'delete-selection',ids:string[]):void; (e:'template-at',payload:{templateID:string;x:number;y:number}):void }>()
 const { fitView, zoomIn, zoomOut, setViewport, updateNodeInternals, viewport, screenToFlowCoordinate } = useVueFlow({ id:'netlab-topology' })
 const canvasElement=ref<HTMLElement|null>(null)
+const hoveredDeviceID=ref<string|null>(null)
+const hoveredCableID=ref<string|null>(null)
+const hoverTip=ref<{left:number;top:number;text:string}|null>(null)
+const activeCable=computed(()=>current.value?.links.find(link=>link.id===hoveredCableID.value))
+const connectedHoverDevices=computed(()=>{
+  const result=new Set<string>()
+  const link=activeCable.value
+  if(link){result.add(link.a);result.add(link.b)}
+  return result
+})
+function positionHoverTip(event:MouseEvent,text:string){
+  const bounds=canvasElement.value?.getBoundingClientRect()
+  if(!bounds)return
+  hoverTip.value={
+    left:Math.max(8,Math.min(bounds.width-260,event.clientX-bounds.left+14)),
+    top:Math.max(8,Math.min(bounds.height-72,event.clientY-bounds.top+16)),
+    text
+  }
+}
+function hoverDevice(payload:{id:string;active:boolean;event:MouseEvent}){
+  if(!payload.active){
+    if(hoveredDeviceID.value===payload.id){hoveredDeviceID.value=null;hoverTip.value=null}
+    return
+  }
+  hoveredDeviceID.value=payload.id
+  hoveredCableID.value=null
+  const device=current.value?.nodes.find(node=>node.id===payload.id)
+  if(!device)return
+  const activePorts=(current.value?.links||[]).filter(link=>link.a===device.id||link.b===device.id).length
+  positionHoverTip(payload.event,`${device.name} · ${device.status==='running'?'Запущен':'Остановлен'} · Соединений: ${activePorts}`)
+}
+function hoverCable(id:string,active:boolean,event:MouseEvent){
+  if(!active){
+    if(hoveredCableID.value===id){hoveredCableID.value=null;hoverTip.value=null}
+    return
+  }
+  hoveredCableID.value=id
+  hoveredDeviceID.value=null
+  const cable=current.value?.links.find(link=>link.id===id)
+  if(!cable)return
+  const first=current.value?.nodes.find(node=>node.id===cable.a)
+  const second=current.value?.nodes.find(node=>node.id===cable.b)
+  positionHoverTip(event,`${first?.name||'Устройство'}: ${portLabel(first,cable.aPort)} ↔ ${second?.name||'Устройство'}: ${portLabel(second,cable.bPort)} · ${cable.status||'Соединено'}`)
+}
+function clearHover(){hoveredDeviceID.value=null;hoveredCableID.value=null;hoverTip.value=null}
 const panMode = ref(false)
 const drawingMode=ref<'select'|'marquee'|'text'|'note'>('select')
 const drawingBox=ref<{left:number;top:number;width:number;height:number}|null>(null)
@@ -449,7 +494,9 @@ const nodes = computed(() => [
   ...(current.value?.nodes.map(device=>({
     id:device.id,type:'device',position:{x:device.x,y:device.y},
     draggable:!panMode.value,selectable:!panMode.value,
-    data:{device,anchors:portsByNode.value.get(device.id)||[]}
+    data:{device,anchors:portsByNode.value.get(device.id)||[],
+      hovered:hoveredDeviceID.value===device.id,
+      connected:connectedHoverDevices.value.has(device.id)}
   }))||[]),
   ...(current.value?.annotations||[]).map(annotation=>{
     const preview=resizePreview.value?.id===annotation.id?resizePreview.value.rect:null
@@ -466,12 +513,14 @@ const edges = computed(() => current.value?.links.filter(link=>geometry.value.ha
   type:'cable',selectable:true,
   data:{aLabel:portLabel(current.value?.nodes.find(n=>n.id===link.a),link.aPort),
     bLabel:portLabel(current.value?.nodes.find(n=>n.id===link.b),link.bPort),
-    color:link.color,width:link.lineWidth,lineStyle:link.lineStyle,status:link.status,onEdit:editLink,onContext:openCableContext}
+    color:link.color,width:link.lineWidth,lineStyle:link.lineStyle,status:link.status,onEdit:editLink,onContext:openCableContext,onHover:hoverCable,
+    emphasized:hoveredCableID.value===link.id,
+    related:hoveredDeviceID.value===link.a||hoveredDeviceID.value===link.b}
 }))||[])
 // After adding/removing a cable, Vue Flow must remeasure DOM handles.
 const internalsKey = computed(() => `${store.labID}:${current.value?.nodes.map(n=>`${n.id}:${n.x},${n.y}`).join('|')}:${current.value?.links.map(l=>`${l.id}:${l.a}:${l.b}`).join('|')}`)
 watch(internalsKey,async()=>{await nextTick();updateNodeInternals((current.value?.nodes || []).map(n=>n.id))},{flush:'post'})
-watch(()=>store.labID,async()=>{firstCableNode.value=null;selectedOnCanvas.value=[];dismissContextMenu();closeDeviceContext();closeCanvasContext();resizeCancel();await nextTick();void fitView({padding:.22,duration:250})})
+watch(()=>store.labID,async()=>{clearHover();firstCableNode.value=null;selectedOnCanvas.value=[];dismissContextMenu();closeDeviceContext();closeCanvasContext();resizeCancel();await nextTick();void fitView({padding:.22,duration:250})})
 const startName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.a)?.name || '')
 const endName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.b)?.name || '')
 const firstPorts = computed(() => availablePorts(current.value?.nodes||[],current.value?.links||[],pending.value?.a||''))
@@ -554,10 +603,11 @@ function closeEditor(){editingID.value=null}
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
       @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="paneClickAt" @pane-double-click="paneDoubleClick" @pane-context-menu="openPaneContext" @selection-change="selectionChanged">
       <Background pattern-color="var(--grid)" :gap="20" :size="1" />
-      <template #node-device="data"><DeviceNode :data="data.data" @device-context="openDeviceContext" /></template>
+      <template #node-device="data"><DeviceNode :data="data.data" @device-context="openDeviceContext" @device-hover="hoverDevice"/></template>
       <template #node-annotation="data"><AnnotationNode :data="data.data" @resize-start="resizeStart" @context="openAnnotationContext" /></template>
       <template #edge-cable="data"><CableEdge v-bind="data" /></template>
     </VueFlow>
+    <div v-if="hoverTip" class="topology-hover-tip" role="status" :style="{left:hoverTip.left+'px',top:hoverTip.top+'px'}">{{hoverTip.text}}</div>
     <div class="canvas-tools" role="toolbar" aria-label="Инструменты топологии">
       <button type="button" :class="{on:!panMode&&!cableMode&&drawingMode==='select'}" title="Выделение (V)" @click="setCanvasMode('select')"><MousePointer2 :size="17"/></button>
       <button type="button" :class="{on:panMode}" title="Перемещать полотно (H или пробел)" @click="setCanvasMode('pan')"><Hand :size="17"/></button>
