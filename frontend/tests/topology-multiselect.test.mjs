@@ -25,7 +25,7 @@ test('group drag persists all moved node positions through existing endpoints', 
   assert.match(store, /await refresh\(\)\s*if\(errors\.length\)/)
 })
 test('toolbar matches legacy order without overlap-prone keyboard hint', () => {
-  const names=['Выбор и перемещение','Перемещение полотна','Соединение устройств','Выделение рамкой','Добавить текст','Добавить примечание','Добавить устройство']
+  const names=['Выбор и перемещение','Перемещение полотна','Соединить устройства','Выделение рамкой','Добавить текст','Добавить примечание','Добавить устройство']
   const toolbar=canvas.slice(canvas.indexOf('class="canvas-tools"'),canvas.indexOf('class="canvas-scale"'))
   let previous=-1
   for(const name of names){
