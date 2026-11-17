@@ -10,7 +10,7 @@ const canvas=read('../src/components/TopologyCanvas.vue')
 const library=read('../src/components/ImageLibrary.vue')
 
 test('all dropdown fields use unified styled listbox and never native popup',()=>{
-  for(const [label,source,amount] of [['app',app,12],['topology',canvas,10],['images',library,4]]){
+  for(const [label,source,amount] of [['app',app,14],['topology',canvas,10],['images',library,4]]){
     assert.equal((source.match(/<UiSelect\b/g)||[]).length,amount,label)
     assert.doesNotMatch(source,/<select\b/)
     assert.match(source,/import UiSelect from/)

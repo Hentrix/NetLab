@@ -63,7 +63,10 @@ const families=computed(()=>{
   if(!groups.has(key))groups.set(key,{category,family,images:[]})
   groups.get(key)!.images.push(image)
  }
- return [...groups.values()].sort((a,b)=>a.category.localeCompare(b.category)||a.family.localeCompare(b.family))
+ for(const group of groups.values()){
+  group.images.sort((a,b)=>(b.version||'').localeCompare(a.version||'', 'ru', {numeric:true}))
+ }
+ return [...groups.values()].sort((a,b)=>a.category.localeCompare(b.category)||a.family.localeCompare(b.family,'ru'))
 })
 const selectedDraft=computed(()=>draftNodes.value.find(({lab,node})=>lab.id+':'+node.id===publishNodeID.value))
 const publishReady=computed(()=>!!selectedDraft.value&&selectedDraft.value.node.status==='stopped')
@@ -97,18 +100,12 @@ async function createPreparation(){
  if(!name.value.trim()||!family.value.trim()||!version.value.trim())return
  preparing.value=true;status.value=''
  try{
-  // Separate base disk and overlay: the ISO is a read-only CD-ROM.
-  const blank=await store.createBlankImage('Заготовка · '+family.value+' '+version.value,sizeGiB.value)
-  await store.createLab('Подготовка · '+family.value+' '+version.value)
-  const lab=store.activeLab
-  if(!lab)throw Error('Не удалось создать подготовительную лабораторию')
-  await store.addNode({
-   name:name.value.trim(),engine:'qemu',kind:category.value==='desktop'?'pc':category.value==='router'?'router':'server',
-   imageId:blank.id,installISOId:isoID.value,ram:ram.value,cpus:cpus.value,
-   nicModel:nicModel.value,diskBus:'ide',nicCount:2,portStyle:'eth',x:250,y:180
+  const result=await store.prepareWorkshopFromISO({
+   name:name.value.trim(),isoId:isoID.value,category:category.value,
+   family:family.value.trim(),version:version.value.trim(),sizeGiB:sizeGiB.value,
+   ram:ram.value,cpus:cpus.value,nicModel:nicModel.value
   })
-  const node=store.activeLab?.nodes.find(n=>n.imageId===blank.id)
-  if(node){store.selectDeviceGroup([node.id],node.id);publishNodeID.value=lab.id+':'+node.id}
+  publishNodeID.value=result.lab.id+':'+result.node.id
   status.value='Установочная VM подготовлена. После установки и выключения ОС вернитесь для публикации.'
   emit('open-lab')
  }catch(e){store.failure=(e as Error).message}
@@ -211,11 +208,11 @@ async function refresh(){
       </div>
       <small v-if="revisionSource">Исходная система: {{revisionSource.family}} {{revisionSource.version}}. Для публикации новой версии нужно штатно выключить подготовительную VM.</small>
     </article>
-    <h2>Каталог подготовленных систем</h2>
+    <h2>Каталог подготовленных систем <small class="workshop-catalog-count">{{published.length}} версий</small></h2>
     <div v-if="families.length" class="workshop-catalogue">
       <article v-for="group in families" :key="group.category+':'+group.family" class="workshop-family">
         <small>{{categories.find(c=>c.id===group.category)?.name||'Прочее'}}</small>
-        <h3>{{group.family}}</h3>
+        <h3>{{group.family}} <small>({{group.images.length}})</small></h3>
         <div v-for="image in group.images" :key="image.id" class="workshop-version">
           <strong>{{image.version||image.name}}</strong><span>{{image.name}}</span><span>{{image.format?.toUpperCase()}}</span>
           <button class="workshop-revision-link" type="button" @click="chooseRevision(image.id)">Создать новую версию</button>
@@ -246,6 +243,7 @@ async function refresh(){
 .workshop-grid label:first-child{grid-column:1/-1}
 .workshop-catalogue{display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:12px}
 .workshop-family h3{margin:0;font-size:15px}
+.workshop-catalog-count,.workshop-family h3 small{font-weight:400;font-size:12px;color:var(--muted)}
 .workshop-family small{color:var(--muted)}
 .workshop-version{display:grid;gap:2px;padding:8px 0;border-top:1px solid var(--border);font-size:12px}
 .workshop-version span{font-size:11px;color:var(--muted)}

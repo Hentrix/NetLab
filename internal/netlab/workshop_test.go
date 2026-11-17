@@ -321,3 +321,62 @@ func TestPreparationMediaSaveRollback(t *testing.T) {
  s.store.path=old
  s.store.mu.Unlock()
 }
+
+
+func TestWorkshopPrepareISOAtomicCreation(t *testing.T) {
+ temp:=t.TempDir()
+ bin:=filepath.Join(temp,"qemu-img")
+ script:="#!/bin/sh\nif [ \"$1\" = create ]; then printf 'blank qcow2' > \"$4\"; else exit 2; fi\n"
+ if err:=os.WriteFile(bin,[]byte(script),0755);err!=nil{t.Fatal(err)}
+ t.Setenv("PATH",temp+string(os.PathListSeparator)+os.Getenv("PATH"))
+ s:=newTestServer(t)
+ iso:=Image{ID:newID(),Name:"Debian installer",Format:"iso",Kind:"iso"}
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,iso)
+ if err:=s.store.save();err!=nil{t.Fatal(err)}
+ s.store.mu.Unlock()
+ payload:=[]byte(`{"name":"Debian 13 preparation","isoId":"`+iso.ID+`","category":"server","family":"Debian","version":"13","sizeGiB":24,"ram":2048,"cpus":2,"nicModel":"e1000"}`)
+ status,body:=httpCall(t,s,"POST","/api/workshop/prepare",payload,true)
+ assertStatus(t,status,201,body)
+ var result struct{
+  Image Image `json:"image"`
+  Lab Lab `json:"lab"`
+  Node Node `json:"node"`
+ }
+ if err:=json.Unmarshal(body,&result);err!=nil{t.Fatal(err)}
+ if !result.Image.Draft||result.Image.Published||result.Image.Format!="qcow2"{t.Fatalf("not a preparation draft: %+v",result.Image)}
+ if len(result.Lab.Nodes)!=1||result.Node.ImageID!=result.Image.ID||result.Node.InstallISOID!=iso.ID||result.Node.BootOrder!="cdrom"{t.Fatalf("preparation node invalid: %+v",result.Node)}
+ if result.Lab.ID==""||result.Node.ID==""{t.Fatal("missing identifiers")}
+ if _,err:=os.Stat(filepath.Join(s.data,"images",result.Image.ID+".qcow2"));err!=nil{t.Fatal(err)}
+ loaded,err:=LoadStore(filepath.Join(s.data,"state.json"))
+ if err!=nil{t.Fatal(err)}
+ if len(loaded.State.Images)!=2||len(loaded.State.Labs)!=1{t.Fatalf("state not committed together: %+v",loaded.State)}
+ status,body=httpCall(t,s,"POST","/api/workshop/prepare",[]byte(`{"name":"Bad","isoId":"`+result.Image.ID+`","category":"server","family":"Debian","version":"14","sizeGiB":24,"ram":2048,"cpus":2,"nicModel":"e1000"}`),true)
+ if status!=404{t.Fatalf("disk accepted as ISO: %d %s",status,body)}
+}
+
+func TestWorkshopPrepareISOStateFailureRollsBack(t *testing.T) {
+ temp:=t.TempDir()
+ bin:=filepath.Join(temp,"qemu-img")
+ if err:=os.WriteFile(bin,[]byte("#!/bin/sh\nprintf 'new disk' > \"$4\"\n"),0755);err!=nil{t.Fatal(err)}
+ t.Setenv("PATH",temp+string(os.PathListSeparator)+os.Getenv("PATH"))
+ s:=newTestServer(t)
+ iso:=Image{ID:newID(),Name:"ISO",Format:"iso",Kind:"iso"}
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,iso)
+ statePath:=s.store.path
+ block:=filepath.Join(s.data,"blocked-state")
+ if err:=os.MkdirAll(block,0750);err!=nil{t.Fatal(err)}
+ s.store.path=block
+ s.store.mu.Unlock()
+ payload:=[]byte(`{"name":"No leftovers","isoId":"`+iso.ID+`","category":"server","family":"Debian","version":"13","sizeGiB":24,"ram":2048,"cpus":2,"nicModel":"e1000"}`)
+ code,body:=httpCall(t,s,"POST","/api/workshop/prepare",payload,true)
+ if code!=500{t.Fatalf("expected save error, got %d %s",code,body)}
+ s.store.mu.Lock()
+ if len(s.store.State.Images)!=1||len(s.store.State.Labs)!=0{t.Fatalf("orphaned state: %+v",s.store.State)}
+ s.store.path=statePath
+ s.store.mu.Unlock()
+ files,err:=os.ReadDir(filepath.Join(s.data,"images"))
+ if err!=nil{t.Fatal(err)}
+ if len(files)!=0{t.Fatalf("orphaned preparation disk: %+v",files)}
+}
