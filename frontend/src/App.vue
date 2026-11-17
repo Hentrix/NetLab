@@ -189,9 +189,22 @@ async function screenshot(){if(store.activeLab)try{await exportTopology(store.ac
 const selectedLinks=computed(()=>store.activeLab?.links.filter(l=>l.a===store.selectedID||l.b===store.selectedID)||[])
 const dark=computed(()=>theme.value==='dark')
 const liveStatus=computed(()=>store.live?'Сервер подключён':'Нет соединения')
+const apiLatency=ref<number|null>(null)
+const telemetryLastSuccess=ref<string|null>(null)
+let telemetryInterval:ReturnType<typeof setInterval>|null=null
+async function refreshTelemetry(){
+  if(!store.token)return
+  const start=performance.now()
+  try{
+    const metrics=await api<import('@/types').HostMetrics>(store.token,'metrics')
+    apiLatency.value=Math.max(0,Math.round(performance.now()-start))
+    store.metrics=metrics
+    telemetryLastSuccess.value=new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})
+  }catch{apiLatency.value=null}
+}
 let interval:ReturnType<typeof setInterval>|null=null
 function toggleTheme(){theme.value=dark.value?'light':'dark';document.documentElement.dataset.theme=theme.value;localStorage.setItem('netlab-theme',theme.value)}
-async function login(){store.authenticate(tokenEntry.value);await store.bootstrap()}
+async function login(){store.authenticate(tokenEntry.value);await store.bootstrap();await refreshTelemetry()}
 async function submitLab(){if(!newLab.value.trim())return;await store.createLab(newLab.value);createLabOpen.value=false;newLab.value=''}
 function openAdd(){
   requestedNodePosition.value=null
@@ -289,8 +302,13 @@ async function deviceContextAction(payload:{id:string;action:DeviceContextAction
     }
   }catch(error){store.failure=(error as Error).message}
 }
-onMounted(()=>{document.documentElement.dataset.theme=theme.value;if(store.token)void store.bootstrap();interval=setInterval(()=>{if(store.token&&!inFlight.value&&page.value==='labs')void store.refresh()},3500)})
-onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
+onMounted(()=>{
+  document.documentElement.dataset.theme=theme.value
+  if(store.token){void store.bootstrap();void refreshTelemetry()}
+  interval=setInterval(()=>{if(store.token&&!inFlight.value&&page.value==='labs')void store.refresh()},3500)
+  telemetryInterval=setInterval(()=>{if(store.token&&page.value==='labs')void refreshTelemetry()},15000)
+})
+onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)clearInterval(telemetryInterval)})
 </script>
 <template>
   <div class="app-shell">
@@ -331,7 +349,9 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
           </template><div v-else-if="!inspectorCollapsed" class="inspector-empty">Выберите устройство<br/>на топологии</div></aside>
         </div>
         <div v-else class="empty-panel"><Router :size="38"/><h2>Создайте лабораторию</h2><p>Устройства, кабели и настройки будут сохранены на Debian-сервере.</p><button class="primary" @click="createLabOpen=true"><Plus :size="16"/> Новая лаборатория</button></div>
-        <footer class="status-bar"><span><i :class="{ok:store.live}"/>{{liveStatus}}</span><span>{{store.activeLab?.nodes.length||0}} устройств</span><span>{{store.activeLab?.links.length||0}} соединений</span><span>NetLab · экспериментальный Vue-редактор</span></footer>
+        <footer class="status-bar"><span><i :class="{ok:store.live}"/>{{liveStatus}}</span><span>{{store.activeLab?.nodes.length||0}} устройств</span><span>{{store.activeLab?.links.length||0}} соединений</span><span>{{apiLatency===null?'Задержка API —':`Задержка API ${apiLatency} мс`}}</span>
+          <span>{{store.metrics?.savedAt?'Последнее сохранение '+new Date(store.metrics.savedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'Последнее сохранение —'}}</span>
+          <span>{{telemetryLastSuccess?'Телеметрия '+telemetryLastSuccess:'NetLab · Vue'}}</span></footer>
       </template>
       <template v-else-if="page==='images'"><ImageLibrary @create-node="addFromImage"/></template>
       <template v-else><SystemOverview /></template>

@@ -90,6 +90,39 @@ const current = computed(() => store.activeLab)
 const annotationOpen=ref(false)
 const annotationID=ref<string|null>(null)
 const annotationSaving=ref(false)
+function onAnnotationBackground(event:Event){
+  annotationDraft.value.background=(event.target as HTMLInputElement).value
+}
+function fitAnnotationHeight(annotation:Omit<Annotation,'id'>):number{
+  // Mirror the snapshot's line wrapping, with a larger safety margin for glyphs.
+  const fontSize=Math.max(9,Math.min(72,annotation.fontSize||14))
+  const font=`${annotation.italic?'italic ':''}${annotation.bold?'700 ':''}${fontSize}px Segoe UI,Arial,sans-serif`
+  const context=document.createElement('canvas').getContext('2d')
+  if(!context)return annotation.height
+  context.font=font
+  const contentWidth=Math.max(1,annotation.width-20)
+  let lines=0
+  for(const paragraph of (annotation.text||'').split('\n')){
+    let line=''
+    for(const word of paragraph.split(/\s+/).filter(Boolean)){
+      const next=line?`${line} ${word}`:word
+      if(line&&context.measureText(next).width>contentWidth){lines++;line=word}else line=next
+    }
+    lines++
+  }
+  const min=annotation.kind==='note'?58:36
+  return Math.max(min,Math.min(800,Math.ceil(lines*fontSize*1.35+24)))
+}
+function fitDraftHeight(){annotationDraft.value.height=fitAnnotationHeight(annotationDraft.value)}
+async function fitExistingAnnotation(){
+  const item=editingAnnotation.value
+  dismissContextMenu()
+  if(!item)return
+  const {id:_,...draft}=item
+  const height=fitAnnotationHeight(draft)
+  if(height!==item.height)try{await store.updateAnnotation(item.id,{...draft,height})}
+  catch(e){store.failure=(e as Error).message}
+}
 const resizePreview=ref<{id:string;rect:AnnotationRect}|null>(null)
 const contextMenu=ref<{id:string;x:number;y:number}|null>(null)
 const deviceContextMenu=ref<{id:string;x:number;y:number}|null>(null)
@@ -538,6 +571,7 @@ function closeEditor(){editingID.value=null}
     <div v-if="contextMenu&&editingAnnotation" class="annotation-context-menu" role="menu" aria-label="Аннотация" :style="{left:`${contextMenu.x}px`,top:`${contextMenu.y}px`}">
       <button type="button" role="menuitem" @click="contextEdit">Изменить оформление</button>
       <button type="button" role="menuitem" @click="contextDuplicate">Дублировать</button>
+      <button type="button" role="menuitem" @click="fitExistingAnnotation">Подогнать высоту под текст</button>
       <button type="button" role="menuitem" class="danger" @click="contextDelete">Удалить</button>
     </div>
     <div v-if="annotationOpen" class="dialog-overlay" @click.self="annotationOpen=false">
@@ -548,6 +582,10 @@ function closeEditor(){editingID.value=null}
         <label>Высота, px<input v-model.number="annotationDraft.height" type="number" min="36" max="800" required/></label></div>
         <div class="dialog-columns"><label>Цвет текста<input v-model="annotationDraft.color" type="color"/></label>
         <label>Размер шрифта<input v-model.number="annotationDraft.fontSize" type="number" min="9" max="72" required/></label></div>
+        <div class="dialog-columns"><label>Цвет заливки<input type="color" :value="annotationDraft.background==='transparent'?'#ffffff':annotationDraft.background" @input="onAnnotationBackground"/></label>
+        <label>Цвет рамки<input v-model="annotationDraft.borderColor" type="color"/></label></div>
+        <div class="dialog-columns"><label>Толщина рамки<input v-model.number="annotationDraft.borderWidth" type="number" min="0" max="12"/></label>
+        <label>Подгонка высоты<button type="button" @click="fitDraftHeight">Подогнать под текст</button></label></div>
         <div class="dialog-columns"><label>Фон<select v-model="annotationDraft.background"><option value="transparent">Прозрачный</option><option value="#fff4c4">Жёлтый</option><option value="#e4f1ff">Голубой</option><option value="#f2eaff">Фиолетовый</option><option value="#ffffff">Белый</option></select></label>
         <label>Выравнивание<select v-model="annotationDraft.align"><option value="left">Слева</option><option value="center">По центру</option><option value="right">Справа</option></select></label></div>
         <div class="annotation-format"><label><input v-model="annotationDraft.bold" type="checkbox"/> Жирный</label><label><input v-model="annotationDraft.italic" type="checkbox"/> Курсив</label><label><input v-model="annotationDraft.underline" type="checkbox"/> Подчёркнутый</label></div>

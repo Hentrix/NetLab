@@ -11,7 +11,7 @@ interface Session {
   id:string; lab:string; node:string; name:string; term:XTerm; fit:FitAddon;
   host:HTMLDivElement; abort:AbortController; cursor:number; decoder:TextDecoder;
   status:'connecting'|'online'|'offline'|'stopped'; pending:Promise<void>; stopped:boolean; stopNoticeShown:boolean;
-  inputBuffer:string; flushTimer:ReturnType<typeof setTimeout>|null
+  inputBuffer:string; flushTimer:ReturnType<typeof setTimeout>|null; unread:boolean
 }
 const sessions=ref<Session[]>([])
 const current=ref<string|null>(null)
@@ -104,7 +104,11 @@ async function stream(s:Session){
           const item=JSON.parse(raw) as {chunk:string;cursor:number;reset?:boolean}
           if(item.reset){s.term.reset();s.decoder=new TextDecoder()}
           s.cursor=item.cursor
-          if(item.chunk){const bytes=Uint8Array.from(atob(item.chunk),c=>c.charCodeAt(0));s.term.write(s.decoder.decode(bytes,{stream:true}))}
+          if(item.chunk){
+            if(current.value!==s.id||minimized.value)s.unread=true
+            const bytes=Uint8Array.from(atob(item.chunk),c=>c.charCodeAt(0))
+            s.term.write(s.decoder.decode(bytes,{stream:true}))
+          }
         }
         if(s.stopped)break
       }
@@ -122,7 +126,7 @@ async function open(device:Device){
   const term=new XTerm({cursorBlink:true,convertEol:false,scrollback:7000,theme:palette(dark.value),fontSize:13,fontFamily:'Consolas, "Cascadia Code", monospace'})
   const fit=new FitAddon();term.loadAddon(fit)
   const host=document.createElement('div');host.className='terminal-instance';host.style.visibility='hidden';host.style.pointerEvents='none'
-  const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve(),stopped:false,stopNoticeShown:false,inputBuffer:'',flushTimer:null}
+  const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve(),stopped:false,stopNoticeShown:false,inputBuffer:'',flushTimer:null,unread:false}
   sessions.value.push(s);current.value=id;minimized.value=false
   await nextTick()
   const holder=dock.value?.querySelector('.terminal-hosts')
@@ -179,7 +183,9 @@ async function focusSession(id:string){
   })
 }
 function select(id:string){
-  if(!sessions.value.some(s=>s.id===id))return
+  const session=sessions.value.find(s=>s.id===id)
+  if(!session)return
+  session.unread=false
   current.value=id
   minimized.value=false
   showSession(id)
@@ -205,6 +211,14 @@ function close(id:string){
   }
 }
 function closeAll(){for(const s of [...sessions.value])close(s.id)}
+function reconnectActive(){
+  const old=active.value
+  if(!old)return
+  const device=store.labs.find(lab=>lab.id===old.lab)?.nodes.find(node=>node.id===old.node)
+  close(old.id)
+  if(device&&device.status==='running')void open(device)
+  else store.failure='Устройство остановлено. Запустите его перед переподключением'
+}
 function moveStart(event:PointerEvent){if(event.button!==0||maximized.value||(event.target as HTMLElement).closest('button'))return
   dragging={x:event.clientX,y:event.clientY,left:left.value??Math.max(0,window.innerWidth-910),top:top.value??Math.max(0,window.innerHeight-580)}
   const el=event.currentTarget as HTMLElement;el.setPointerCapture(event.pointerId)
@@ -224,9 +238,10 @@ defineExpose({open})
       <div class="term-header-name"><TerminalSquare :size="18"/> Консоли NetLab</div>
       <div class="term-actions"><button title="Свернуть" @click="minimized=true"><Minus :size="16"/></button><button title="Развернуть" @click="maximized=!maximized"><Maximize2 :size="15"/></button><button title="Закрыть все консоли" @click="closeAll"><X :size="17"/></button></div>
     </div>
-    <nav class="term-tabs" v-show="!minimized"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @pointerdown.prevent="select(s.id)" @click="select(s.id)"><i :class="s.status"/>{{s.name}}</button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
+    <nav class="term-tabs" v-show="!minimized"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @pointerdown.prevent="select(s.id)" @click="select(s.id)"><i :class="s.status"/>{{s.name}}<span v-if="s.unread" class="term-unread" title="Новый вывод"/></button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
       <div class="terminal-hosts" v-show="!minimized" @pointerdown="focusConsoleArea"></div>
-      <footer class="term-footer" v-show="!minimized"><span>{{active?.status==='online'?'Соединение активно':active?.status==='stopped'?'Устройство остановлено':'Подключение / ожидание API'}}</span><button @click="active&&select(active.id)"><RefreshCcw :size="13"/> Обновить отображение</button></footer>
+      <footer class="term-footer" v-show="!minimized"><span>{{active?.status==='online'?'Соединение активно':active?.status==='stopped'?'Устройство остановлено':'Подключение / ожидание API'}}</span><button @click="active&&select(active.id)"><RefreshCcw :size="13"/> Обновить отображение</button>
+        <button type="button" @click="reconnectActive"><RefreshCcw :size="13"/> Переподключить</button></footer>
     <button v-if="minimized" class="restore-console" @click="minimized=false">{{sessions.length}} вкладок · Развернуть</button>
   </div>
 </template>
