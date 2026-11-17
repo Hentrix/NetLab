@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { LayoutDashboard, HardDrive, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, GitBranch, Pencil, LogOut, X, ChevronDown } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
 import { portLabel } from '@/api/client'
@@ -38,6 +38,30 @@ async function removeLab(){
   await store.deleteLab(lab.id)
 }
 const search=ref('')
+const bulkOpen=ref(false)
+const bulkSelected=ref<string[]>([])
+const bulkBusy=ref(false)
+const bulkCandidates=computed(()=>store.activeLab?.nodes||[])
+const bulkNames=computed(()=>bulkCandidates.value.filter(n=>bulkSelected.value.includes(n.id)).map(n=>n.name))
+function openBulk(){bulkSelected.value=[];bulkOpen.value=true}
+function selectAllBulk(){bulkSelected.value=bulkCandidates.value.map(n=>n.id)}
+function selectRunningBulk(){bulkSelected.value=bulkCandidates.value.filter(n=>n.status==='running').map(n=>n.id)}
+function selectStoppedBulk(){bulkSelected.value=bulkCandidates.value.filter(n=>n.status!=='running').map(n=>n.id)}
+watch(()=>store.labID,()=>{bulkOpen.value=false;bulkSelected.value=[]})
+async function performBulk(operation:'start'|'stop'|'delete'){
+  if(bulkBusy.value||!bulkSelected.value.length||!store.activeLab)return
+  const existing=new Set(store.activeLab.nodes.map(n=>n.id))
+  const ids=bulkSelected.value.filter(id=>existing.has(id))
+  if(!ids.length)return
+  if(operation==='delete'&&!confirm(`Удалить ${ids.length} устройств со всеми их подключениями? Действие необратимо.`))return
+  bulkBusy.value=true
+  try{
+    const result=await store.bulkNodes(ids,operation)
+    const failedIds=new Set(result.failed.map(item=>item.id))
+    bulkSelected.value=store.activeLab?.nodes.filter(node=>ids.includes(node.id)&&failedIds.has(node.id)).map(node=>node.id)||[]
+    if(!result.failed.length)bulkOpen.value=false
+  }finally{bulkBusy.value=false}
+}
 const selectedTab=ref<'overview'|'ports'>('overview')
 const portEditorOpen=ref(false)
 const portEditorDevice=ref('')
@@ -146,7 +170,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
         <form class="login-card" @submit.prevent="login"><Router :size="34"/><h1>Вход в NetLab</h1><p>Токен администратора хранится только в текущей вкладке браузера.</p><label>Токен<input v-model="tokenEntry" type="password" autocomplete="off" required/></label><button class="primary" type="submit">Войти</button></form>
       </template>
       <template v-else-if="page==='labs'">
-        <header class="page-title"><div><h1>{{store.activeLab?.name||'Лаборатории'}}</h1><p>Редактор сетевой топологии · Vue 3 + Vue Flow</p></div><div class="header-commands" v-if="store.activeLab"><button @click="powerLab('start')"><Play :size="16"/> Запустить всё</button><button @click="powerLab('stop')"><Square :size="16"/> Остановить всё</button><button @click="screenshot" title="Сохранить топологию в PNG"><Camera :size="16"/> Снимок</button><button title="Обновить" @click="store.refresh()"><RotateCcw :size="16"/></button><button class="danger" title="Удалить лабораторию" @click="removeLab"><Trash2 :size="16"/></button></div></header>
+        <header class="page-title"><div><h1>{{store.activeLab?.name||'Лаборатории'}}</h1><p>Редактор сетевой топологии · Vue 3 + Vue Flow</p></div><div class="header-commands" v-if="store.activeLab"><button @click="powerLab('start')"><Play :size="16"/> Запустить всё</button><button @click="powerLab('stop')"><Square :size="16"/> Остановить всё</button><button @click="openBulk"><Monitor :size="16"/> Массовые действия</button><button @click="screenshot" title="Сохранить топологию в PNG"><Camera :size="16"/> Снимок</button><button title="Обновить" @click="store.refresh()"><RotateCcw :size="16"/></button><button class="danger" title="Удалить лабораторию" @click="removeLab"><Trash2 :size="16"/></button></div></header>
         <div v-if="store.activeLab" class="workspace">
           <aside class="device-list"><header>Устройства <button title="Добавить устройство" @click="openAdd"><Plus :size="17"/></button></header><input v-model="search" placeholder="Поиск устройств" aria-label="Поиск устройств"/><div class="list-scroll"><div v-for="group in deviceGroups" :key="group.id" class="device-category">
             <button class="device-category-title" @click="folded[group.id]=!folded[group.id]" :aria-expanded="!folded[group.id]"><ChevronDown :size="14" class="device-category-chevron" :class="{folded:folded[group.id]}"/>{{group.title}}<small>{{group.devices.length}}</small></button>
@@ -173,6 +197,16 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
       <div v-if="store.failure" role="alert" class="error-toast" @click="store.failure=''">{{store.failure}} <X :size="16"/></div>
     </main>
     <TerminalDock ref="terminal" :theme="theme" />
+    <div v-if="bulkOpen" class="dialog-overlay" @click.self="!bulkBusy&&(bulkOpen=false)">
+      <div class="dialog-card bulk-dialog" role="dialog" aria-label="Массовые действия с устройствами">
+        <h2>Массовые действия</h2>
+        <p>Выберите устройства текущей лаборатории. Операции выполняются последовательно; при ошибке успешные изменения сохраняются.</p>
+        <div class="bulk-tools"><button type="button" @click="selectAllBulk">Выбрать все</button><button type="button" @click="selectRunningBulk">Запущенные</button><button type="button" @click="selectStoppedBulk">Остановленные</button><button type="button" @click="bulkSelected=[]">Сбросить</button></div>
+        <div class="bulk-node-list"><label v-for="node in bulkCandidates" :key="node.id" class="bulk-node-row"><input v-model="bulkSelected" type="checkbox" :value="node.id" :disabled="bulkBusy"/><span>{{node.name}}</span><small>{{node.status==='running'?'Запущен':'Остановлен'}}</small></label></div>
+        <p class="bulk-count">Выбрано: {{bulkNames.length}}</p>
+        <div class="dialog-actions"><button type="button" :disabled="bulkBusy" @click="bulkOpen=false">Закрыть</button><button type="button" :disabled="bulkBusy||!bulkSelected.length" @click="performBulk('start')"><Play :size="14"/> Запустить</button><button type="button" :disabled="bulkBusy||!bulkSelected.length" @click="performBulk('stop')"><Square :size="14"/> Остановить</button><button type="button" class="bulk-delete" :disabled="bulkBusy||!bulkSelected.length" @click="performBulk('delete')"><Trash2 :size="14"/> Удалить</button></div>
+      </div>
+    </div>
     <div v-if="createLabOpen" class="dialog-overlay" @click.self="createLabOpen=false"><form class="dialog-card" @submit.prevent="submitLab"><h2>Новая лаборатория</h2><label>Название<input v-model="newLab" required maxlength="80" autofocus/></label><div class="dialog-actions"><button type="button" @click="createLabOpen=false">Отмена</button><button class="primary">Создать</button></div></form></div>
     <div v-if="iconPickerOpen" class="dialog-overlay" @click.self="iconPickerOpen=false">
       <div class="dialog-card icon-picker-dialog" role="dialog" aria-label="Каталог иконок">

@@ -142,3 +142,18 @@
 .annotation-dialog textarea{width:100%;resize:vertical;min-height:72px;padding:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--ink);font:inherit}
 .annotation-format{display:flex;flex-wrap:wrap;gap:12px}.annotation-format label{display:flex;align-items:center;gap:6px}
 .annotation-format input{width:auto;min-width:0}
+
+/* Bulk device operations */
+.bulk-dialog{width:min(660px,calc(100vw - 24px));max-height:85vh;display:flex;flex-direction:column}
+.bulk-dialog p{font-size:12px;margin:0;color:var(--muted)}
+.bulk-tools{display:flex;gap:6px;flex-wrap:wrap}
+.bulk-tools button{border:1px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--ink);padding:6px 9px}
+.bulk-node-list{min-height:0;overflow-y:auto;display:grid;align-content:start;gap:3px;border:1px solid var(--border);border-radius:7px;padding:6px}
+.bulk-node-row{display:flex!important;flex-direction:row;align-items:center;gap:9px;padding:8px;border-radius:5px}
+.bulk-node-row:hover{background:var(--surface-hover)}
+.bulk-node-row input{width:auto;min-width:0;margin:0}
+.bulk-node-row span{flex:1;font-size:12px;overflow-wrap:anywhere}
+.bulk-node-row small{color:var(--muted)}
+.bulk-count{font-weight:600}
+.dialog-actions .bulk-delete{color:#c66c73}
+@media(max-width:720px){.bulk-dialog .dialog-actions{flex-wrap:wrap}}
