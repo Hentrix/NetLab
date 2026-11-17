@@ -89,21 +89,37 @@ type Engine struct {
 	data       string
 	instances  map[string]*Instance
 	linkActive map[string]bool
+	startFailures map[string]string // transient per-node errors before child spawn
 	execOp     func(string, ...string) error // injectable for isolated cable tests
 }
 
 func NewEngine(data string) *Engine {
-	return &Engine{data: data, instances: map[string]*Instance{}, linkActive: map[string]bool{}}
+	return &Engine{data: data, instances: map[string]*Instance{}, linkActive: map[string]bool{}, startFailures: map[string]string{}}
 }
 func key(lab, node string) string { return lab + "/" + node }
 func (e *Engine) Status(lab, node string) (string, string) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if i := e.instances[key(lab, node)]; i != nil {
-		return i.status, i.err
-	}
-	return "stopped", ""
+ e.mu.Lock()
+ defer e.mu.Unlock()
+ k:=key(lab,node)
+ if i:=e.instances[k];i!=nil {
+  if i.status=="running" {return i.status,""}
+  if failure:=e.startFailures[k];failure!="" {return i.status,failure}
+  return i.status,i.err
+ }
+ return "stopped",e.startFailures[k]
 }
+
+// SetStartFailure remembers errors that occur before the QEMU/VPCS child
+// exists, so topology polling still displays a useful diagnosis after the
+// API's error toast has disappeared. It is cleared by the next successful start.
+func (e *Engine) SetStartFailure(lab,node string,err error) {
+ e.mu.Lock()
+ defer e.mu.Unlock()
+ if e.startFailures==nil {e.startFailures=map[string]string{}}
+ k:=key(lab,node)
+ if err==nil {delete(e.startFailures,k)} else {e.startFailures[k]=err.Error()}
+}
+
 // NodeBusy remains true until the QEMU/VPCS process has been reaped AND
 // its TAP/transport cleanup has finished. A stopped status alone is too
 // early to delete runtime disks or recycle TAP names.
