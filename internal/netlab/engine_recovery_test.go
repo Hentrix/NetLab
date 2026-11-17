@@ -66,11 +66,14 @@ func TestRecoverCleansStaleNetworkWithoutTouchingDisk(t *testing.T){
 
 func TestRecoverReturnsOVSFailureAndKeepsGuestDisk(t *testing.T){
  e,lab,disk:=recoveryFixture(t)
+ var tapDeletes int
  e.execOp=func(bin string,args ...string)error{
   if bin=="ovs-vsctl"{return errors.New("OVS unavailable")}
+  if bin=="ip"{tapDeletes++}
   return nil
  }
  err:=e.RecoverChecked([]Lab{lab})
  if err==nil||!strings.Contains(err.Error(),"OVS unavailable"){t.Fatalf("cleanup error hidden: %v",err)}
+ if tapDeletes!=0{t.Fatalf("TAP interfaces deleted after OVS failure: %d",tapDeletes)}
  if _,err:=os.Stat(disk);err!=nil{t.Fatalf("guest disk removed: %v",err)}
 }
