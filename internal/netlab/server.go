@@ -494,11 +494,8 @@ func (s *Server) labsAPI(w http.ResponseWriter, r *http.Request, p []string) {
 	}
 	if len(p) == 3 && r.Method == "POST" {
 		if p[2] == "start" {
-			for _, n := range lab.Nodes {
-				if err := s.startNode(*lab, n); err != nil {
-					fail(w, 500, n.Name+": "+err.Error())
-					return
-				}
+			if err:=s.startLab(*lab);err!=nil {
+				fail(w,409,err.Error());return
 			}
 			respond(w, 200, s.withStatuses(*lab))
 			return
