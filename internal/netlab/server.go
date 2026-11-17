@@ -119,13 +119,10 @@ func (s *Server) withStatuses(l Lab) Lab {
 	return l
 }
 func (s *Server) hasRunning(l Lab) bool {
-	for _, n := range l.Nodes {
-		st, _ := s.engine.Status(l.ID, n.ID)
-		if st == "running" {
-			return true
-		}
-	}
-	return false
+ for _,n:=range l.Nodes {
+  if s.engine.NodeBusy(l.ID,n.ID) {return true}
+ }
+ return false
 }
 func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/"), "/"), "/")
@@ -472,7 +469,9 @@ func (s *Server) labsAPI(w http.ResponseWriter, r *http.Request, p []string) {
 				fail(w, 409, "сначала остановите лабораторию")
 				return
 			}
-			s.engine.Cleanup(*lab)
+			if err:=s.engine.CleanupChecked(*lab);err!=nil {
+				fail(w,409,err.Error());return
+			}
 			for i := range s.store.State.Labs {
 				if s.store.State.Labs[i].ID == id {
 					s.store.State.Labs = append(s.store.State.Labs[:i], s.store.State.Labs[i+1:]...)
@@ -500,7 +499,9 @@ func (s *Server) labsAPI(w http.ResponseWriter, r *http.Request, p []string) {
 			return
 		}
 		if p[2] == "stop" {
-			s.engine.Cleanup(*lab)
+			if err:=s.engine.CleanupChecked(*lab);err!=nil {
+				fail(w,500,err.Error());return
+			}
 			respond(w, 200, s.withStatuses(*lab))
 			return
 		}
@@ -788,6 +789,10 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			return
 		}
 		if r.Method == "POST" && action == "start" {
+			if s.engine.NodeBusy(l.ID,node.ID) {
+				status,_:=s.engine.Status(l.ID,node.ID)
+				if status!="running" {fail(w,409,"предыдущая VM ещё очищает TAP: повторите запуск");return}
+			}
 			if err := s.startNode(*l, *node); err != nil {
 				fail(w, 500, err.Error())
 				return

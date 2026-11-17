@@ -393,3 +393,26 @@ func TestNegativeWorldCoordinatesForNodes(t *testing.T) {
 	code, body = httpCall(t, s, "POST", url, invalid, true)
 	assertStatus(t, code, 400, body)
 }
+
+
+func TestLabDeleteBlockedUntilRuntimeCleanupCompletes(t *testing.T) {
+ s:=newTestServer(t)
+ lab:=Lab{ID:newID(),Name:"Cleanup lab",Nodes:[]Node{{ID:newID(),Name:"VM",Engine:"qemu"}},Links:[]Link{}}
+ s.store.mu.Lock()
+ s.store.State.Labs=append(s.store.State.Labs,lab)
+ if err:=s.store.save();err!=nil{t.Fatal(err)}
+ s.store.mu.Unlock()
+ done:=make(chan struct{})
+ s.engine.mu.Lock()
+ s.engine.instances[key(lab.ID,lab.Nodes[0].ID)]=&Instance{status:"stopped",done:done}
+ s.engine.mu.Unlock()
+ code,body:=httpCall(t,s,"DELETE","/api/labs/"+lab.ID,nil,true)
+ assertStatus(t,code,409,body)
+ code,body=httpCall(t,s,"POST","/api/labs/"+lab.ID+"/stop",nil,true)
+ // A completed guest may still be cleaning TAP. The API must not silently
+ // return success until that cleanup has actually completed.
+ if code!=500 {t.Fatalf("stop returned %d before cleanup finished: %s",code,body)}
+ close(done)
+ code,body=httpCall(t,s,"DELETE","/api/labs/"+lab.ID,nil,true)
+ assertStatus(t,code,200,body)
+}
