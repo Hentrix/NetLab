@@ -288,7 +288,7 @@ function changeTemplate(){
   if(t?.imageId)imageID.value=t.imageId
   deviceName.value=t?.name||'Устройство'
   deviceKind.value=t?.engine==='vpcs'?'pc':t?.kind||'router'
-  deviceIcon.value=defaultKindIcon[deviceKind.value]||'Router.png'
+  deviceIcon.value=t?.icon||defaultKindIcon[deviceKind.value]||'Router.png'
   nicCount.value=t?.engine==='vpcs'?1:t?.nicCount||4
   deviceRAM.value=t?.ram||256
   deviceCPU.value=t?.cpus||1

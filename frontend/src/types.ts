@@ -28,7 +28,7 @@ export interface ImageRecord {
  family?:string;version?:string;published?:boolean;draft?:boolean;size?:number;createdAt?:string
 }
 export interface Template {
-  id: string; name: string; kind?: DeviceKind; engine?: 'vpcs' | 'qemu';
+  id: string; name: string; kind?: DeviceKind; icon?: string; engine?: 'vpcs' | 'qemu';
   ram?: number; cpus?: number; imageId?: string; category?: string; family?: string; version?: string; portStyle?: string; nicCount?: number;
   nicModel?: string; diskBus?: string
 }
