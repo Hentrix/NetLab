@@ -68,26 +68,31 @@ func (s *Server) startJobAPI(w http.ResponseWriter,r *http.Request,labID string)
  if r.Method!=http.MethodPost{fail(w,405,"method not allowed");return}
  // Lock job state first: two concurrent POST requests cannot both launch the
  // same topology. The job remains queryable after the worker has finished.
+ // Follow the same store -> jobs lock order as runStartJob to avoid a
+ // deadlock while an earlier job is updating its progress.
+ s.store.mu.Lock()
  s.jobsMu.Lock()
  if previous:=s.startJobs[labID];previous!=nil && previous.Status=="running" {
   s.jobsMu.Unlock()
+  s.store.mu.Unlock()
   fail(w,409,"запуск лаборатории уже выполняется");return
  }
- s.store.mu.Lock()
  lab:=s.store.findLab(labID)
  if lab==nil{
-  s.store.mu.Unlock()
   s.jobsMu.Unlock()
+  s.store.mu.Unlock()
   fail(w,404,"лаборатория не найдена");return
  }
  job:=&LabStartJob{ID:newID(),LabID:labID,Status:"running",StartedAt:time.Now(),Nodes:make([]LabStartNode,0,len(lab.Nodes))}
  for _,n:=range lab.Nodes {job.Nodes=append(job.Nodes,LabStartNode{ID:n.ID,Name:n.Name,Status:"pending"})}
  snapshot:=*lab
+ response:=*job
+ response.Nodes=append([]LabStartNode(nil),job.Nodes...)
  s.startJobs[labID]=job
- s.store.mu.Unlock()
  s.jobsMu.Unlock()
+ s.store.mu.Unlock()
  go s.runStartJob(snapshot)
- respond(w,http.StatusAccepted,job)
+ respond(w,http.StatusAccepted,response)
 }
 func (s *Server) runStartJob(snapshot Lab) {
  labID:=snapshot.ID
