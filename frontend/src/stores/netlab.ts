@@ -126,6 +126,15 @@ export const useNetlabStore = defineStore('netlab', () => {
     await refreshImages()
     return image
   }
+  async function createWorkshopRevision(imageId:string,name:string,version:string){
+    const result=await action(()=>api<{image:ImageRecord;lab:Lab;node:Device}>(token.value,'workshop/revise',{
+      method:'POST',body:json({imageId,name,version})
+    }))
+    labID.value=result.lab.id
+    await Promise.all([refresh(),refreshImages()])
+    selectDeviceGroup([result.node.id],result.node.id)
+    return result
+  }
   async function publishWorkshop(labId:string,nodeId:string,name:string,category:string,family:string,version:string){
     const image=await action(()=>api<ImageRecord>(token.value,'workshop/publish',{method:'POST',
       body:json({labId,nodeId,name,category,family,version})}))
@@ -267,6 +276,6 @@ export const useNetlabStore = defineStore('netlab', () => {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,selectedDeviceIDs,selectDeviceGroup,clickDeviceInSidebar,busy,failure,live,activeLab,selectedNode,
-    authenticate,logout,refresh,pollActiveLab,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,refreshImages,refreshTemplates,createBlankImage,publishWorkshop,updateImageMetadata,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
+    authenticate,logout,refresh,pollActiveLab,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,refreshImages,refreshTemplates,createBlankImage,createWorkshopRevision,publishWorkshop,updateImageMetadata,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
     removeNode,updateNode,configureQemuNode,bulkNodes,moveTopologyItems,connect,disconnect,updateCable,labPower}
 })
