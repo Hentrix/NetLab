@@ -128,3 +128,7 @@
 .icon-picker-list button:hover{border-color:var(--accent)}
 .icon-picker-list img{width:55px;height:55px;object-fit:contain}
 .icon-picker-list span{font-size:10px;word-break:break-word;line-height:1.3}
+
+/* Keep terminal DOM mounted while minimized. Each PTY has its own xterm and input focus. */
+.term-dock.is-minimized .term-tabs,.term-dock.is-minimized .terminal-hosts,.term-dock.is-minimized .term-footer{display:none!important}
+.term-tab.active button:first-child{font-weight:650}

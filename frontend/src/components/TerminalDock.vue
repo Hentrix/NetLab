@@ -112,13 +112,50 @@ async function open(device:Device){
   const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve(),stopped:false,stopNoticeShown:false}
   sessions.value.push(s);current.value=id;minimized.value=false
   await nextTick()
-  dock.value?.querySelector('.terminal-hosts')?.appendChild(host)
-  term.open(host);term.onData(text=>send(s,text));await nextTick()
-  select(id);void stream(s)
+  const holder=dock.value?.querySelector('.terminal-hosts')
+  if(!holder){sessions.value=sessions.value.filter(item=>item.id!==id);term.dispose();return}
+  for(const item of sessions.value)item.host.style.display=item.id===id?'block':'none'
+  holder.appendChild(host)
+  host.style.display='block'
+  term.open(host)
+  term.onData(text=>send(s,text))
+  await nextTick()
+  select(id)
+  void stream(s)
 }
-function fitActive(){const s=active.value;if(!s||minimized.value)return;requestAnimationFrame(()=>{if(s.host.isConnected && s.host.clientWidth>20&&s.host.clientHeight>20){s.fit.fit();s.term.refresh(0,s.term.rows-1)}})}
-function select(id:string){current.value=id;minimized.value=false;for(const s of sessions.value)s.host.style.display=s.id===id?'block':'none';fitActive();sessions.value.find(s=>s.id===id)?.term.focus()}
-function close(id:string){const s=sessions.value.find(item=>item.id===id);if(!s)return;s.abort.abort();s.term.dispose();s.host.remove();sessions.value=sessions.value.filter(item=>item.id!==id);if(current.value===id){current.value=sessions.value[0]?.id??null;if(current.value)void nextTick(()=>select(current.value!))}}
+let focusRevision=0
+function fitActive(){
+  const s=active.value
+  if(!s||minimized.value)return
+  const revision=++focusRevision
+  requestAnimationFrame(()=>{
+    if(revision!==focusRevision||current.value!==s.id||minimized.value)return
+    if(!s.host.isConnected||s.host.clientWidth<=20||s.host.clientHeight<=20)return
+    s.fit.fit()
+    s.term.refresh(0,s.term.rows-1)
+    s.term.focus()
+  })
+}
+function select(id:string){
+  if(!sessions.value.some(s=>s.id===id))return
+  current.value=id
+  minimized.value=false
+  for(const s of sessions.value)s.host.style.display=s.id===id?'block':'none'
+  void nextTick(fitActive)
+}
+function close(id:string){
+  const s=sessions.value.find(item=>item.id===id)
+  if(!s)return
+  s.abort.abort()
+  s.term.dispose()
+  s.host.remove()
+  sessions.value=sessions.value.filter(item=>item.id!==id)
+  if(current.value===id){
+    current.value=null
+    const next=sessions.value[0]
+    if(next)void nextTick(()=>select(next.id))
+  }
+}
 function closeAll(){for(const s of [...sessions.value])close(s.id)}
 function moveStart(event:PointerEvent){if(event.button!==0||maximized.value||(event.target as HTMLElement).closest('button'))return
   dragging={x:event.clientX,y:event.clientY,left:left.value??Math.max(0,window.innerWidth-910),top:top.value??Math.max(0,window.innerHeight-580)}
@@ -139,11 +176,11 @@ defineExpose({open})
       <div class="term-header-name"><TerminalSquare :size="18"/> Консоли NetLab</div>
       <div class="term-actions"><button title="Свернуть" @click="minimized=true"><Minus :size="16"/></button><button title="Развернуть" @click="maximized=!maximized"><Maximize2 :size="15"/></button><button title="Закрыть все консоли" @click="closeAll"><X :size="17"/></button></div>
     </div>
-    <template v-if="!minimized">
-      <nav class="term-tabs"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @click="select(s.id)"><i :class="s.status"/>{{s.name}}</button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
-      <div class="terminal-hosts"></div>
-      <footer class="term-footer"><span>{{active?.status==='online'?'Соединение активно':active?.status==='stopped'?'Устройство остановлено':'Подключение / ожидание API'}}</span><button @click="active&&select(active.id)"><RefreshCcw :size="13"/> Обновить отображение</button></footer>
+    <template>
+      <nav class="term-tabs" v-show="!minimized"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @click="select(s.id)"><i :class="s.status"/>{{s.name}}</button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
+      <div class="terminal-hosts" v-show="!minimized"></div>
+      <footer class="term-footer" v-show="!minimized"><span>{{active?.status==='online'?'Соединение активно':active?.status==='stopped'?'Устройство остановлено':'Подключение / ожидание API'}}</span><button @click="active&&select(active.id)"><RefreshCcw :size="13"/> Обновить отображение</button></footer>
     </template>
-    <button v-else class="restore-console" @click="minimized=false">{{sessions.length}} вкладок · Развернуть</button>
+    <button v-if="minimized" class="restore-console" @click="minimized=false">{{sessions.length}} вкладок · Развернуть</button>
   </div>
 </template>
