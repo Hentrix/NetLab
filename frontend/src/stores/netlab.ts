@@ -108,21 +108,21 @@ export const useNetlabStore = defineStore('netlab', () => {
   }
   // Bulk operations target a snapshot of lab/node IDs. Refresh once at the
   // end even after partial failure, so the UI reflects committed operations.
-  async function bulkNodes(ids: string[], operation: 'start' | 'stop' | 'delete'): Promise<{completed:number; failed:string[]}> {
+  async function bulkNodes(ids: string[], operation: 'start' | 'stop' | 'delete'): Promise<{completed:number; failed:{id:string;error:string}[]}> {
     const lab=current()
     const allowed=new Set(lab.nodes.map(node=>node.id))
     const target=[...new Set(ids)].filter(id=>allowed.has(id))
-    const failed:string[]=[]
+    const failed:{id:string;error:string}[]=[]
     let completed=0
     for(const id of target){
       try{
         const suffix=operation==='delete'?'':`/${operation}`
         await api<unknown>(token.value,`labs/${lab.id}/nodes/${id}${suffix}`,{method:operation==='delete'?'DELETE':'POST'})
         completed++
-      }catch(e){failed.push(`${lab.nodes.find(n=>n.id===id)?.name||id}: ${(e as Error).message}`)}
+      }catch(e){failed.push({id,error:`${lab.nodes.find(n=>n.id===id)?.name||id}: ${(e as Error).message}`})}
     }
     await refresh()
-    if(failed.length)failure.value=`Не выполнено (${failed.length}): ${failed.join('; ')}`
+    if(failed.length)failure.value=`Не выполнено (${failed.length}): ${failed.map(item=>item.error).join('; ')}`
     return {completed,failed}
   }
   async function nodePower(id: string, operation: 'start' | 'stop') {
