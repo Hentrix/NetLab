@@ -186,3 +186,65 @@ func TestRecoverInterruptedImageDeletionOnStartup(t *testing.T) {
  if err!=nil||string(data)!="recoverable disk"{t.Fatalf("image was not recovered: %q %v",data,err)}
  if _,err:=os.Stat(path+".deleting");!os.IsNotExist(err){t.Fatalf("tombstone not cleared: %v",err)}
 }
+
+func TestWorkshopRevisionFromPublishedImage(t *testing.T) {
+ temp:=t.TempDir()
+ bin:=filepath.Join(temp,"qemu-img")
+ script:="#!/bin/sh\nif [ \"$1\" = convert ]; then cp \"$6\" \"$7\"; else exit 2; fi\n"
+ if err:=os.WriteFile(bin,[]byte(script),0755);err!=nil{t.Fatal(err)}
+ t.Setenv("PATH",temp+string(os.PathListSeparator)+os.Getenv("PATH"))
+ s:=newTestServer(t)
+ base:=Image{ID:newID(),Name:"Debian 13",Kind:"disk",Format:"qcow2",Published:true,Category:"server",Family:"Debian",Version:"13",RAM:2048,CPUs:2,NICModel:"e1000",NICCount:2,DiskBus:"ide"}
+ original:=filepath.Join(s.data,"images",base.ID+".qcow2")
+ if err:=os.WriteFile(original,[]byte("published base contents"),0600);err!=nil{t.Fatal(err)}
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,base)
+ if err:=s.store.save();err!=nil{t.Fatal(err)}
+ s.store.mu.Unlock()
+ payload:=[]byte(`{"imageId":"`+base.ID+`","name":"Debian 13.1","version":"13.1"}`)
+ status,body:=httpCall(t,s,"POST","/api/workshop/revise",payload,true)
+ assertStatus(t,status,201,body)
+ var result struct{ Image Image `json:"image"`; Lab Lab `json:"lab"`; Node Node `json:"node"` }
+ if err:=json.Unmarshal(body,&result);err!=nil{t.Fatal(err)}
+ if !result.Image.Draft||result.Image.Published||result.Image.ID==base.ID||result.Image.Version!="13.1"{t.Fatalf("invalid new draft: %+v",result.Image)}
+ if len(result.Lab.Nodes)!=1||result.Node.ID!=result.Lab.Nodes[0].ID||result.Node.ImageID!=result.Image.ID||result.Node.Engine!="qemu"||result.Node.InstallISOID!=""{t.Fatalf("invalid revision lab: %+v %+v",result.Lab,result.Node)}
+ copied,err:=os.ReadFile(filepath.Join(s.data,"images",result.Image.ID+".qcow2"))
+ if err!=nil||string(copied)!="published base contents"{t.Fatalf("new QCOW2 not independent: %q %v",copied,err)}
+ source,err:=os.ReadFile(original)
+ if err!=nil||string(source)!="published base contents"{t.Fatalf("original changed: %q %v",source,err)}
+ status,body=httpCall(t,s,"POST","/api/workshop/revise",[]byte(`{"imageId":"`+base.ID+`","name":"Duplicate","version":"13"}`),true)
+ if status!=409 {t.Fatalf("existing published version accepted: %d %s",status,body)}
+ status,body=httpCall(t,s,"POST","/api/workshop/revise",[]byte(`{"imageId":"`+result.Image.ID+`","name":"Invalid","version":"14"}`),true)
+ if status!=409 {t.Fatalf("non-published draft accepted: %d %s",status,body)}
+ iso:=Image{ID:newID(),Name:"Installer",Format:"iso",Kind:"iso",Published:true}
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,iso)
+ s.store.mu.Unlock()
+ status,body=httpCall(t,s,"POST","/api/workshop/revise",[]byte(`{"imageId":"`+iso.ID+`","name":"Invalid ISO","version":"14"}`),true)
+ if status!=409 {t.Fatalf("ISO accepted as revision base: %d %s",status,body)}
+}
+func TestWorkshopRevisionRestoresStateOnSaveFailure(t *testing.T) {
+ temp:=t.TempDir()
+ bin:=filepath.Join(temp,"qemu-img")
+ if err:=os.WriteFile(bin,[]byte("#!/bin/sh\ncp \"$6\" \"$7\"\n"),0755);err!=nil{t.Fatal(err)}
+ t.Setenv("PATH",temp+string(os.PathListSeparator)+os.Getenv("PATH"))
+ s:=newTestServer(t)
+ base:=Image{ID:newID(),Name:"Linux",Format:"qcow2",Kind:"disk",Published:true,Category:"server",Family:"Linux",Version:"1"}
+ if err:=os.WriteFile(filepath.Join(s.data,"images",base.ID+".qcow2"),[]byte("base"),0600);err!=nil{t.Fatal(err)}
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,base)
+ oldStatePath:=s.store.path
+ blocked:=filepath.Join(s.data,"blocked-state")
+ if err:=os.MkdirAll(blocked,0750);err!=nil{t.Fatal(err)}
+ s.store.path=blocked
+ s.store.mu.Unlock()
+ status,body:=httpCall(t,s,"POST","/api/workshop/revise",[]byte(`{"imageId":"`+base.ID+`","name":"Linux 2","version":"2"}`),true)
+ if status!=500 {t.Fatalf("expected save failure: %d %s",status,body)}
+ s.store.mu.Lock()
+ if len(s.store.State.Images)!=1||len(s.store.State.Labs)!=0{t.Fatalf("state leaked after failure: %+v",s.store.State)}
+ s.store.path=oldStatePath
+ s.store.mu.Unlock()
+ images,err:=os.ReadDir(filepath.Join(s.data,"images"))
+ if err!=nil{t.Fatal(err)}
+ if len(images)!=1||images[0].Name()!=base.ID+".qcow2"{t.Fatalf("orphaned disk after rollback: %+v",images)}
+}
