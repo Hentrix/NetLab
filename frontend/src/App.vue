@@ -464,6 +464,8 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
                   <label>RAM</label><strong>{{store.selectedNode.ram||256}} МиБ</strong>
                   <label>Сетевая карта</label><strong>{{store.selectedNode.nicModel||'e1000'}}</strong>
                   <label>Шина диска</label><strong>{{store.selectedNode.diskBus||'ide'}}</strong>
+                  <label>Установочный ISO</label><strong>{{store.images.find(image=>image.id===store.selectedNode?.installISOId)?.name||'Не подключён'}}</strong>
+                  <label>Приоритет загрузки</label><strong>{{store.selectedNode.bootOrder==='disk'||!store.selectedNode.installISOId?'Диск':'ISO'}}</strong>
                 </template>
                 <label>Интерфейсы</label><strong>{{store.selectedNode.engine==='vpcs'?1:(store.selectedNode.nicCount||16)}}</strong>
               </div>
@@ -525,7 +527,9 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
         <label>Название<input v-model.trim="hardwareDraft.name" maxlength="80" required/></label>
         <label>Тип устройства<UiSelect v-model="hardwareDraft.kind"><option v-for="kind in deviceKinds" :key="kind.id" :value="kind.id">{{kind.name}}</option></UiSelect></label>
         <label>Обозначение интерфейсов<UiSelect v-model="hardwareDraft.portStyle"><option v-for="style in portStyles" :key="style.value" :value="style.value">{{style.name}}</option></UiSelect></label>
-        <label>Образ диска<UiSelect v-model="hardwareDraft.imageId" required><option v-for="image in store.images" :key="image.id" :value="image.id">{{image.name}}</option></UiSelect></label>
+        <label>Системный диск<UiSelect v-model="hardwareDraft.imageId" required><option v-for="image in store.images.filter(item=>item.kind!=='iso'&&item.format!=='iso')" :key="image.id" :value="image.id">{{image.name}}</option></UiSelect></label>
+        <label>Установочный ISO<UiSelect v-model="hardwareDraft.installISOId"><option value="">Без ISO (загрузка с диска)</option><option v-for="image in store.images.filter(item=>item.kind==='iso'||item.format==='iso')" :key="image.id" :value="image.id">{{image.name}}</option></UiSelect></label>
+        <label>Порядок загрузки<UiSelect v-model="hardwareDraft.bootOrder"><option value="disk">Сначала системный диск</option><option value="cdrom">Сначала ISO</option></UiSelect></label>
         <div class="dialog-columns"><label>Оперативная память, МиБ<input v-model.number="hardwareDraft.ram" type="number" min="128" max="131072" required/></label>
         <label>vCPU<input v-model.number="hardwareDraft.cpus" type="number" min="1" max="64" required/></label></div>
         <div class="dialog-columns"><label>Ethernet-порты<input v-model.number="hardwareDraft.nicCount" type="number" min="1" max="16" required/></label>
