@@ -37,7 +37,7 @@ test('toolbar matches legacy order without overlap-prone keyboard hint', () => {
 })
 
 test('left Ctrl and Meta click preserve selection across device hover updates', () => {
-  assert.match(canvas, /:multi-selection-key-code="\['Control','Meta'\]"/)
+  assert.match(canvas, /:multi-selection-key-code="\['Control','Meta','Shift'\]"/)
   assert.match(canvas, /selected:isDeviceSelected\(device\.id\)/)
   assert.match(canvas, /selected:selectedOnCanvas\.value\.includes\(`annotation:\$\{annotation\.id\}`\)/)
   assert.match(canvas, /@selection-change="selectionChanged"/)

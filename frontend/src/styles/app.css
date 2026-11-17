@@ -334,3 +334,6 @@
 .topology-annotation .annotation-content::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
 .annotation-transparency{display:flex!important;align-items:center;gap:8px}
 .annotation-transparency input{min-width:0}
+
+/* Explicit selection rectangle: independent of Vue Flow selection lifecycle. */
+.canvas-marquee-preview{position:absolute;z-index:15;pointer-events:none;border:1px solid var(--accent);background:rgba(76,155,215,.15);border-radius:2px;box-sizing:border-box}

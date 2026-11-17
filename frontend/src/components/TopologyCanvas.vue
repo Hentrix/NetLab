@@ -80,6 +80,78 @@ const drawingMode=ref<'select'|'marquee'|'text'|'note'>('select')
 const drawingBox=ref<{left:number;top:number;width:number;height:number}|null>(null)
 let noteGesture:{startX:number;startY:number}|null=null
 let suppressPaneClick=false
+let marqueeGesture:{startX:number;startY:number;additive:boolean}|null=null
+let middleGesture:{x:number;y:number;viewportX:number;viewportY:number;zoom:number}|null=null
+const marqueeBox=ref<{left:number;top:number;width:number;height:number}|null>(null)
+function onCanvasPointerDown(event:PointerEvent){
+  // Vue Flow can clear its internal selection on right pointerdown, before
+  // contextmenu fires. Keep our persisted group intact for the bulk menu.
+  if(event.button===2&&store.selectedDeviceIDs.length>1)event.stopPropagation()
+  if(event.button===1){
+    event.preventDefault();event.stopPropagation()
+    middleGesture={x:event.clientX,y:event.clientY,
+      viewportX:viewport.value.x,viewportY:viewport.value.y,zoom:viewport.value.zoom}
+    window.addEventListener('pointermove',moveMiddlePan)
+    window.addEventListener('pointerup',stopMiddlePan)
+    window.addEventListener('pointercancel',stopMiddlePan)
+    return
+  }
+  if(event.button!==0||drawingMode.value!=='marquee'||!(event.target as HTMLElement).closest('.vue-flow__pane'))return
+  event.preventDefault();event.stopPropagation()
+  marqueeGesture={startX:event.clientX,startY:event.clientY,
+    additive:event.ctrlKey||event.metaKey||event.shiftKey}
+  updateMarquee(event)
+  window.addEventListener('pointermove',updateMarquee)
+  window.addEventListener('pointerup',finishMarquee)
+  window.addEventListener('pointercancel',cancelMarquee)
+}
+function moveMiddlePan(event:PointerEvent){
+  if(!middleGesture)return
+  const g=middleGesture
+  void setViewport({x:g.viewportX+event.clientX-g.x,y:g.viewportY+event.clientY-g.y,zoom:g.zoom})
+}
+function stopMiddlePan(){
+  middleGesture=null
+  window.removeEventListener('pointermove',moveMiddlePan)
+  window.removeEventListener('pointerup',stopMiddlePan)
+  window.removeEventListener('pointercancel',stopMiddlePan)
+}
+function updateMarquee(event:PointerEvent){
+  if(!marqueeGesture)return
+  const bounds=canvasElement.value?.getBoundingClientRect()
+  if(!bounds)return
+  marqueeBox.value={left:Math.min(marqueeGesture.startX,event.clientX)-bounds.left,
+    top:Math.min(marqueeGesture.startY,event.clientY)-bounds.top,
+    width:Math.abs(event.clientX-marqueeGesture.startX),
+    height:Math.abs(event.clientY-marqueeGesture.startY)}
+}
+function cancelMarquee(){
+  marqueeGesture=null;marqueeBox.value=null
+  window.removeEventListener('pointermove',updateMarquee)
+  window.removeEventListener('pointerup',finishMarquee)
+  window.removeEventListener('pointercancel',cancelMarquee)
+}
+function finishMarquee(event:PointerEvent){
+  const gesture=marqueeGesture
+  if(!gesture)return
+  const start=screenToFlowCoordinate({x:gesture.startX,y:gesture.startY})
+  const end=screenToFlowCoordinate({x:event.clientX,y:event.clientY})
+  const x=Math.min(start.x,end.x),y=Math.min(start.y,end.y)
+  const x2=Math.max(start.x,end.x),y2=Math.max(start.y,end.y)
+  // Geometric hit test, independent of Vue Flow selection-change timing.
+  const devices=(current.value?.nodes||[]).filter(n=>n.x<=x2&&n.x+126>=x&&n.y<=y2&&n.y+112>=y).map(n=>n.id)
+  const annotations=(current.value?.annotations||[]).filter(n=>n.x<=x2&&n.x+n.width>=x&&n.y<=y2&&n.y+n.height>=y).map(n=>'annotation:'+n.id)
+  const previous=gesture.additive?selectedOnCanvas.value:[]
+  const selected=[...new Set([...previous,...devices,...annotations])]
+  selectingWithMouse=true
+  selectedOnCanvas.value=selected
+  const pickedDevices=selected.filter(id=>current.value?.nodes.some(n=>n.id===id))
+  store.selectDeviceGroup(pickedDevices,pickedDevices.at(-1)||null)
+  selectingWithMouse=false
+  suppressPaneClick=true
+  cancelMarquee()
+  drawingMode.value='select'
+}
 function startAnnotationGesture(event:PointerEvent){
   if(drawingMode.value!=='note'||event.button!==0)return
   const target=event.target as HTMLElement
@@ -468,6 +540,7 @@ async function resizeFinish(event:PointerEvent){
 function onKeyboard(event:KeyboardEvent){
   if(event.key==='Escape'){
     if(noteGesture)cancelAnnotationGesture()
+    if(marqueeGesture)cancelMarquee()
     dismissContextMenu();closeDeviceContext();closeCanvasContext()
     if(resizeState.value)resizeCancel()
     setCanvasMode('select')
@@ -497,7 +570,7 @@ function onKeyRelease(event:KeyboardEvent){
   if(event.code==='Space'&&spacePan.value){spacePan.value=false;panMode.value=false}
 }
 onMounted(()=>{window.addEventListener('keydown',onKeyboard);window.addEventListener('keyup',onKeyRelease)})
-onBeforeUnmount(()=>{window.removeEventListener('keydown',onKeyboard);window.removeEventListener('keyup',onKeyRelease);resizeCancel();cancelAnnotationGesture()})
+onBeforeUnmount(()=>{window.removeEventListener('keydown',onKeyboard);window.removeEventListener('keyup',onKeyRelease);resizeCancel();cancelAnnotationGesture();cancelMarquee();stopMiddlePan()})
 
 const annotationDraft=ref<Omit<Annotation,'id'>>({
   kind:'note',text:'',x:160,y:160,width:220,height:100,
@@ -682,10 +755,10 @@ function doubleClick(event:{node:{id:string}}){
 function closeEditor(){editingID.value=null}
 </script>
 <template>
-  <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @pointerdown.capture="startAnnotationGesture" @mousedown.capture="preventMiddleAutoscroll" @auxclick="preventMiddleAutoscroll" @dragover="onCanvasDragOver" @drop="onCanvasDrop" @click.self="dismissContextMenu();closeDeviceContext();closeCanvasContext()">
+  <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @pointerdown.capture="onCanvasPointerDown($event);startAnnotationGesture($event)" @mousedown.capture="preventMiddleAutoscroll" @auxclick="preventMiddleAutoscroll" @dragover="onCanvasDragOver" @drop="onCanvasDrop" @click.self="dismissContextMenu();closeDeviceContext();closeCanvasContext()">
     <VueFlow id="netlab-topology" :nodes="nodes" :edges="edges" :nodes-draggable="!panMode" :nodes-connectable="!panMode"
-       :elements-selectable="!panMode" :pan-on-drag="panMode ? [0,1] : [1]" :selection-on-drag="!panMode"
-      :multi-selection-key-code="['Control','Meta']"
+       :elements-selectable="!panMode" :pan-on-drag="panMode ? [0,1] : [1]" :selection-on-drag="!panMode&&drawingMode!=='marquee'"
+      :multi-selection-key-code="['Control','Meta','Shift']"
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
       @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="paneClickAt" @pane-double-click="paneDoubleClick" @pane-context-menu="openPaneContext" @selection-start="selectingArea=true" @selection-end="selectingArea=false" @selection-change="selectionChanged">
       <Background pattern-color="var(--grid)" :gap="20" :size="1" />
@@ -716,6 +789,7 @@ function closeEditor(){editingID.value=null}
       <button type="button" title="Масштаб 100%" @click="resetZoom">100%</button>
       <button type="button" title="Показать всё" @click="fitView({padding:.2,duration:250})"><Maximize :size="16"/></button>
     </div>
+    <div v-if="marqueeBox" class="canvas-marquee-preview" :style="{left:marqueeBox.left+'px',top:marqueeBox.top+'px',width:marqueeBox.width+'px',height:marqueeBox.height+'px'}"></div>
     <div v-if="drawingBox" class="canvas-annotation-preview" :style="{left:drawingBox.left+'px',top:drawingBox.top+'px',width:drawingBox.width+'px',height:drawingBox.height+'px'}"></div>
     <div v-if="cableMode" class="canvas-cable-hint"><CableIcon :size="14"/> {{firstCableNode?'Выберите второе устройство':'Выберите первое устройство'}} <button title="Отменить" @click="cableMode=false;firstCableNode=null"><X :size="13"/></button></div>
     <div v-if="!current?.nodes.length" class="canvas-empty"><MonitorPlay :size="30"/><strong>Лаборатория пуста</strong><span>Нажмите «+», чтобы добавить устройство</span></div>
