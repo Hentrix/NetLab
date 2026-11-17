@@ -35,3 +35,11 @@ test('switching terminal tabs retains measurable hosts and activates xterm texta
   assert.match(component, /@pointerdown\.prevent="select\(s\.id\)"/)
   assert.match(component, /showSession\(id\)/)
 })
+
+test('tab click focuses its xterm immediately, before async resize frame', () => {
+  const switching=component.split('function select(id:string)')[1].split('function focusConsoleArea')[0]
+  const immediate=switching.indexOf('focusTerminal(session)')
+  const deferred=switching.indexOf('void focusSession(id)')
+  assert.ok(immediate>=0&&deferred>immediate)
+  assert.match(switching,/session\.host\.isConnected/)
+})
