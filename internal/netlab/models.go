@@ -74,6 +74,7 @@ type Node struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
 	ImageID   string     `json:"imageId"`
+	InstallISOID string `json:"installISOId,omitempty"`
 	Engine    string     `json:"engine,omitempty"` // empty = legacy QEMU, or vpcs
 	RAM       int        `json:"ram"`
 	CPUs      int        `json:"cpus"`
@@ -115,9 +116,23 @@ type Image struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Format    string    `json:"format"`
+	Kind      string    `json:"kind,omitempty"`
+	Category  string    `json:"category,omitempty"`
+	Family    string    `json:"family,omitempty"`
+	Version   string    `json:"version,omitempty"`
+	Published bool      `json:"published,omitempty"`
+	Draft     bool      `json:"draft,omitempty"`
+	RAM       int       `json:"ram,omitempty"`
+	CPUs      int       `json:"cpus,omitempty"`
+	NICModel  string    `json:"nicModel,omitempty"`
+	NICCount  int       `json:"nicCount,omitempty"`
+	DiskBus   string    `json:"diskBus,omitempty"`
+	PortStyle string    `json:"portStyle,omitempty"`
+	Icon      string    `json:"icon,omitempty"`
 	Size      int64     `json:"size"`
 	CreatedAt time.Time `json:"createdAt"`
 }
+func (i Image) isISO() bool { return i.Kind=="iso" || i.Format=="iso" }
 
 type State struct {
 	Labs   []Lab   `json:"labs"`
@@ -150,7 +165,7 @@ func validateNode(n Node) error {
 		return errors.New("неподдерживаемый движок устройства")
 	}
 	if n.Engine == "vpcs" {
-		if n.ImageID != "" || n.NICCount != 1 {
+		if n.ImageID != "" || n.InstallISOID != "" || n.NICCount != 1 {
 			return errors.New("VPCS не использует диск и поддерживает ровно один Ethernet-порт")
 		}
 		if n.Kind != "" && n.Kind != "pc" {

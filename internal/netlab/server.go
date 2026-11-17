@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,8 @@ type Server struct {
 	engine           *Engine
 	data, web, token string
 	sampler          metricSampler
+	ticketsMu        sync.Mutex
+	vncTickets       map[string]vncTicket
 }
 
 func NewServer(data, web, token string) (*Server, error) {
@@ -46,7 +49,7 @@ func NewServer(data, web, token string) (*Server, error) {
 	if _, err := exec.LookPath("ovs-vsctl"); err == nil {
 		e.Recover(store.State.Labs)
 	}
-	return &Server{store: store, engine: e, data: data, web: web, token: token}, nil
+	return &Server{store: store, engine: e, data: data, web: web, token: token,vncTickets:make(map[string]vncTicket)}, nil
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -58,6 +61,8 @@ func (s *Server) Handler() http.Handler {
 		respond(w, 200, map[string]any{"status": "ok", "version": "0.8.2"})
 	})
 	mux.Handle("/api/", s.auth(http.HandlerFunc(s.api)))
+	mux.HandleFunc("/vnc/",s.proxyVNC)
+	mux.Handle("/novnc/",http.StripPrefix("/novnc/",http.FileServer(http.Dir("/usr/share/novnc"))))
 	mux.Handle("/", http.FileServer(http.Dir(s.web)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -121,6 +126,10 @@ func (s *Server) hasRunning(l Lab) bool {
 }
 func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/"), "/"), "/")
+	if len(parts)==5 && parts[0]=="labs" && parts[2]=="nodes" && parts[4]=="vnc-ticket" {
+		s.issueVNCTicket(w,r,parts[1],parts[3])
+		return
+	}
 	if len(parts) == 6 && parts[0] == "labs" && parts[2] == "nodes" && parts[4] == "console" && parts[5] == "stream" {
 		s.consoleStream(w, r, parts[1], parts[3])
 		return
@@ -158,10 +167,13 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			fail(w, 405, "method not allowed")
 			return
 		}
-		respond(w, 200, []map[string]any{{"id": "generic", "kind": "server", "name": "Generic x86 QEMU", "portStyle": "eth", "ram": 1024, "cpus": 1, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "mikrotik-chr", "kind": "router", "name": "MikroTik CHR", "portStyle": "ether", "ram": 256, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "ide"}, {"id": "cisco-iosv", "kind": "router", "name": "Cisco IOSv", "portStyle": "gi", "ram": 768, "cpus": 1, "nicModel": "e1000", "nicCount": 4, "diskBus": "virtio"}, {"id": "linux", "kind": "pc", "name": "Linux VM", "portStyle": "eth", "ram": 2048, "cpus": 2, "nicModel": "virtio-net-pci", "nicCount": 4, "diskBus": "virtio"}, {"id": "vpcs", "engine": "vpcs", "kind": "pc", "name": "VPCS", "portStyle": "eth", "ram": 128, "cpus": 1, "nicModel": "e1000", "nicCount": 1, "diskBus": "ide"}})
+		respond(w, 200, s.catalogTemplates())
 		return
 	case "images":
 		s.imagesAPI(w, r, parts)
+		return
+	case "workshop":
+		s.workshopAPI(w, r, parts)
 		return
 	case "labs":
 		s.labsAPI(w, r, parts)
@@ -262,12 +274,14 @@ func (s *Server) imagesAPI(w http.ResponseWriter, r *http.Request, p []string) {
 			return
 		}
 	}
+	if len(p)==2 && p[1]=="blank" && r.Method==http.MethodPost { s.createBlankImage(w,r);return }
+	if len(p)==2 && validID(p[1]) && r.Method==http.MethodPatch { s.updateImageMetadata(w,r,p[1]);return }
 	if len(p) == 2 && r.Method == "DELETE" && validID(p[1]) {
 		s.store.mu.Lock()
 		defer s.store.mu.Unlock()
 		for _, lab := range s.store.State.Labs {
 			for _, n := range lab.Nodes {
-				if n.ImageID == p[1] {
+				if n.ImageID == p[1] || n.InstallISOID == p[1] {
 					fail(w, 409, "образ используется лабораторией")
 					return
 				}
@@ -289,11 +303,7 @@ func (s *Server) imagesAPI(w http.ResponseWriter, r *http.Request, p []string) {
 	fail(w, 404, "образ не найден")
 }
 func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request) {
-	if _, err := exec.LookPath("qemu-img"); err != nil {
-		fail(w, 503, "требуется пакет qemu-utils")
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8<<30)
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<30)
 	mr, err := r.MultipartReader()
 	if err != nil {
 		fail(w, 400, "ожидался multipart/form-data")
@@ -326,10 +336,14 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "пустой образ")
 		return
 	}
-	format, err := imageInfo(tmp)
-	if err != nil {
-		fail(w, 422, err.Error())
-		return
+	format := ""
+	if strings.EqualFold(filepath.Ext(filename),".iso") {
+		if err := validateInstallerISO(tmp); err != nil { fail(w,422,err.Error());return }
+		format="iso"
+	}else{
+		if _, err := exec.LookPath("qemu-img"); err != nil { fail(w,503,"требуется пакет qemu-utils");return }
+		format, err = imageInfo(tmp)
+		if err != nil { fail(w,422,err.Error());return }
 	}
 	final := filepath.Join(s.data, "images", id+"."+format)
 	if err := os.Rename(tmp, final); err != nil {
@@ -341,7 +355,9 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request) {
 		gid, _ := parseInt(u.Gid)
 		_ = os.Chown(final, uid, gid)
 	}
-	img := Image{ID: id, Name: filename, Size: size, Format: format, CreatedAt: time.Now()}
+	kind:="disk"
+	if format=="iso" { kind="iso" }
+	img := Image{ID: id, Name: filename, Size: size, Format: format, Kind: kind, CreatedAt: time.Now()}
 	s.store.mu.Lock()
 	s.store.State.Images = append(s.store.State.Images, img)
 	err = s.store.save()
@@ -361,8 +377,12 @@ func (s *Server) startNode(l Lab, n Node) error {
 		return s.engine.StartVPCS(l, n)
 	}
 	img := findImage(&s.store.State, n.ImageID)
-	if img == nil {
-		return fmt.Errorf("образ узла %s не найден", n.Name)
+	if img == nil || img.isISO() {
+		return fmt.Errorf("дисковый образ узла %s не найден", n.Name)
+	}
+	if n.InstallISOID!="" {
+		iso:=findImage(&s.store.State,n.InstallISOID)
+		if iso==nil || !iso.isISO() { return fmt.Errorf("ISO установщика узла %s не найден",n.Name) }
 	}
 	return s.engine.Start(l, n, *img)
 }
@@ -508,7 +528,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			fail(w, 400, err.Error())
 			return
 		}
-		if req.Template.Engine != "vpcs" && findImage(&s.store.State, req.Template.ImageID) == nil {
+		if req.Template.Engine != "vpcs" && !s.validNodeMedia(req.Template) {
 			fail(w, 404, "образ не найден")
 			return
 		}
@@ -556,7 +576,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			fail(w, 400, err.Error())
 			return
 		}
-		if req.Engine != "vpcs" && findImage(&s.store.State, req.ImageID) == nil {
+		if req.Engine != "vpcs" && !s.validNodeMedia(req) {
 			fail(w, 404, "образ не найден")
 			return
 		}
@@ -662,7 +682,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 				fail(w, 400, err.Error())
 				return
 			}
-			if req.Engine != "vpcs" && findImage(&s.store.State, req.ImageID) == nil {
+			if req.Engine != "vpcs" && !s.validNodeMedia(req) {
 				fail(w, 404, "образ не найден")
 				return
 			}

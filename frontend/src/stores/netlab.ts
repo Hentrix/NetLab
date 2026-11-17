@@ -121,6 +121,26 @@ export const useNetlabStore = defineStore('netlab', () => {
     images.value=await api<ImageRecord[]>(token.value,'images')
     return image
   }
+  async function createBlankImage(name:string,sizeGiB:number){
+    const image=await action(()=>api<ImageRecord>(token.value,'images/blank',{method:'POST',body:json({name,sizeGiB})}))
+    await refreshImages()
+    return image
+  }
+  async function publishWorkshop(labId:string,nodeId:string,name:string,category:string,family:string,version:string){
+    const image=await action(()=>api<ImageRecord>(token.value,'workshop/publish',{method:'POST',
+      body:json({labId,nodeId,name,category,family,version})}))
+    await Promise.all([refreshImages(),refreshTemplates()])
+    return image
+  }
+  async function updateImageMetadata(id:string,name:string,category:string,family:string,version:string){
+    const image=await action(()=>api<ImageRecord>(token.value,`images/${id}`,{method:'PATCH',
+      body:json({name,category,family,version})}))
+    await refreshImages()
+    return image
+  }
+  async function refreshTemplates(){
+    templates.value=await action(()=>api<Template[]>(token.value,'templates'))
+  }
   async function refreshImages(){
     images.value=await action(()=>api<ImageRecord[]>(token.value,'images'))
   }
@@ -247,6 +267,6 @@ export const useNetlabStore = defineStore('netlab', () => {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,selectedDeviceIDs,selectDeviceGroup,clickDeviceInSidebar,busy,failure,live,activeLab,selectedNode,
-    authenticate,logout,refresh,pollActiveLab,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,refreshImages,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
+    authenticate,logout,refresh,pollActiveLab,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,refreshImages,refreshTemplates,createBlankImage,publishWorkshop,updateImageMetadata,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
     removeNode,updateNode,configureQemuNode,bulkNodes,moveTopologyItems,connect,disconnect,updateCable,labPower}
 })
