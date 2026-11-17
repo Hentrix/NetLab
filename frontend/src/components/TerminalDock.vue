@@ -74,6 +74,7 @@ async function stream(s:Session){
           s.cursor=item.cursor
           if(item.chunk){const bytes=Uint8Array.from(atob(item.chunk),c=>c.charCodeAt(0));s.term.write(s.decoder.decode(bytes,{stream:true}))}
         }
+        if(s.stopped)break
       }
     }catch(error){if(s.abort.signal.aborted||s.stopped)break;s.status='offline';s.term.write(`\r\n[NetLab] ${String((error as Error).message)}. Переподключение…\r\n`)}
     if(s.stopped||s.abort.signal.aborted)break
