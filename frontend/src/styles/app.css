@@ -212,3 +212,11 @@
 .canvas-context-menu{width:230px;max-height:min(390px,calc(100% - 16px));overflow-y:auto}
 .device-log-dialog{width:min(800px,calc(100vw - 24px));max-height:80vh}
 .device-log-dialog pre{min-height:110px;max-height:55vh;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:14px;background:var(--surface-2);color:var(--ink);font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+ 
+/* Functional parity: complete device templates, hardware and full icon catalogue. */
+.device-icon-choice{display:flex;align-items:center;gap:8px;justify-content:flex-start;text-align:left;min-height:44px;padding:8px 10px;background:var(--surface-2);color:var(--ink);border:1px solid var(--border);border-radius:6px;cursor:pointer}
+.device-icon-choice img{max-width:36px;max-height:36px;object-fit:contain}
+.icon-category-row{display:flex;gap:5px;flex-wrap:wrap;margin:10px 0}
+.icon-category-row button,.icon-load-more{background:var(--surface-2);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:6px 9px;cursor:pointer}
+.icon-category-row button.active{border-color:var(--accent);background:var(--accent-soft)}
+.icon-result-count{color:var(--muted)}.icon-load-more{align-self:center;margin-top:8px}
