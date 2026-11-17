@@ -110,7 +110,7 @@ const hardwareLocked=computed(()=>store.activeLab?.nodes.some(node=>node.status=
 function editHardware(device:Device){
   if(device.engine==='vpcs')return
   hardwareID.value=device.id
-  hardwareDraft.value={...device,ports:device.ports?.map(port=>({...port}))}
+  hardwareDraft.value={...device,installISOId:device.installISOId||'',bootOrder:device.bootOrder||(device.installISOId?'cdrom':'disk'),ports:device.ports?.map(port=>({...port}))}
   hardwareOpen.value=true
 }
 async function saveHardware(){
