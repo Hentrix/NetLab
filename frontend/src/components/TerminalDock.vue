@@ -10,7 +10,7 @@ const props = defineProps<{theme: 'light' | 'dark'}>()
 interface Session {
   id:string; lab:string; node:string; name:string; term:XTerm; fit:FitAddon;
   host:HTMLDivElement; abort:AbortController; cursor:number; decoder:TextDecoder;
-  status:'connecting'|'online'|'offline'|'stopped'; pending:Promise<void>; stopped:boolean
+  status:'connecting'|'online'|'offline'|'stopped'; pending:Promise<void>; stopped:boolean; stopNoticeShown:boolean
 }
 const sessions=ref<Session[]>([])
 const current=ref<string|null>(null)
@@ -25,19 +25,38 @@ const dark=computed(()=>props.theme==='dark')
 const palette=(isDark:boolean)=> isDark?{background:'#101c28',foreground:'#dce8f3',cursor:'#c0e4f7',selectionBackground:'#527ca488'}:{background:'#fff',foreground:'#243c52',cursor:'#255a7e',selectionBackground:'#b5d9f6'}
 let resize:ResizeObserver|null=null
 let dragging:{x:number;y:number;left:number;top:number}|null=null
+// Session identity stays bound to lab/node IDs; names follow the live store.
+watch(()=>store.labs, labs=>{
+  for(const session of sessions.value){
+    const updated=labs.find(lab=>lab.id===session.lab)?.nodes.find(node=>node.id===session.node)
+    if(updated)session.name=updated.name
+  }
+},{deep:true})
+
+function showStoppedOnce(s:Session, message:string){
+  s.stopped=true
+  s.status='stopped'
+  if(s.stopNoticeShown)return
+  s.stopNoticeShown=true
+  s.term.write(`\r\n[NetLab] ${message}\r\n`)
+}
 function authPath(s:Session){return `/api/labs/${encodeURIComponent(s.lab)}/nodes/${encodeURIComponent(s.node)}`}
 function send(s:Session, data:string){
-  if(s.stopped){s.term.write('\r\n[NetLab] Устройство остановлено. Запустите его и откройте консоль заново.\r\n');return}
+  if(s.stopped)return
   s.pending=s.pending.then(async()=>{
+    if(s.stopped||s.abort.signal.aborted)return
     const response=await fetch(`${authPath(s)}/console`,{method:'POST',headers:{Authorization:`Bearer ${store.token}`,'Content-Type':'application/json'},body:JSON.stringify({text:data})})
-    if(response.status===409){s.stopped=true;s.status='stopped';throw Error('Устройство остановлено или сервер NetLab перезапущен')}
+    if(response.status===409){
+      showStoppedOnce(s,'Устройство остановлено или сервер NetLab перезапущен. Запустите устройство и откройте консоль снова.')
+      return
+    }
     if(!response.ok){
       const detail=await response.json().catch(()=>null) as {error?:string}|null
       throw Error(detail?.error||`HTTP ${response.status}`)
     }
   }).catch(e=>{
     if(s.abort.signal.aborted)return
-    if(s.stopped){s.term.write(`\r\n[NetLab] ${(e as Error).message}. Запустите устройство и откройте консоль снова.\r\n`);return}
+    if(s.stopped)return
     s.status='offline';s.term.write(`\r\n[NetLab] Ошибка отправки: ${(e as Error).message}\r\n`)
   })
 }
@@ -48,9 +67,9 @@ async function stream(s:Session){
       s.status='connecting'
       const response=await fetch(`${authPath(s)}/console/stream?cursor=${s.cursor}`,{signal:s.abort.signal,headers:{Authorization:`Bearer ${store.token}`}})
       if(response.status===409){
-        s.stopped=true;s.status='stopped'
         const detail=await response.json().catch(()=>null) as {error?:string}|null
-        s.term.write(`\r\n[NetLab] ${detail?.error||'Устройство не запущено'}. Запустите устройство и откройте консоль заново.\r\n`)
+        if(s.abort.signal.aborted)break
+        showStoppedOnce(s,`${detail?.error||'Устройство не запущено'}. Запустите устройство и откройте консоль заново.`)
         break
       }
       if(!response.ok||!response.body)throw Error(`HTTP ${response.status}`)
@@ -66,7 +85,7 @@ async function stream(s:Session){
         while((pos=buffer.indexOf('\n\n'))>=0){
           const event=buffer.slice(0,pos);buffer=buffer.slice(pos+2)
           const kind=event.match(/^event:\s*(.+)$/m)?.[1]
-          if(kind==='closed'){s.stopped=true;s.status='stopped';s.term.write('\r\n[NetLab] Устройство остановлено. Запустите его заново.\r\n');break}
+          if(kind==='closed'){showStoppedOnce(s,'Устройство остановлено. Запустите его заново.');break}
           if(kind!=='output')continue
           const raw=event.match(/^data:\s*(.+)$/m)?.[1];if(!raw)continue
           const item=JSON.parse(raw) as {chunk:string;cursor:number;reset?:boolean}
@@ -90,7 +109,7 @@ async function open(device:Device){
   const term=new XTerm({cursorBlink:true,convertEol:false,scrollback:7000,theme:palette(dark.value),fontSize:13,fontFamily:'Consolas, "Cascadia Code", monospace'})
   const fit=new FitAddon();term.loadAddon(fit)
   const host=document.createElement('div');host.className='terminal-instance';host.style.display='none'
-  const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve(),stopped:false}
+  const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve(),stopped:false,stopNoticeShown:false}
   sessions.value.push(s);current.value=id;minimized.value=false
   await nextTick()
   dock.value?.querySelector('.terminal-hosts')?.appendChild(host)
