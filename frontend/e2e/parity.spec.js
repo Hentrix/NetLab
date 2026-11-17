@@ -178,14 +178,18 @@ test('holding middle mouse button pans canvas without hand mode',async({page})=>
   const rect=await area.boundingBox()
   expect(rect).not.toBeNull()
   await page.waitForTimeout(400) // wait for initial fitView animation
-  const viewport=page.locator('.vue-flow__viewport')
-  const before=await viewport.getAttribute('style')
+  const target=page.locator('.vue-flow__node-device').first()
+  const before=await target.boundingBox()
+  expect(before).not.toBeNull()
   const x=rect.x+rect.width*.55,y=rect.y+rect.height*.7
   await page.mouse.move(x,y)
   await page.mouse.down({button:'middle'})
   await page.mouse.move(x+95,y+60,{steps:6})
   await page.mouse.up({button:'middle'})
-  await expect.poll(()=>viewport.getAttribute('style')).not.toBe(before)
+  await expect.poll(async()=>{
+    const after=await target.boundingBox()
+    return after?Math.hypot(after.x-before.x,after.y-before.y):0
+  }).toBeGreaterThan(30)
 })
 
 test('styled network adapter dropdown sends selected model',async({page})=>{
