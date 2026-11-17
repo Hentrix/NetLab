@@ -184,3 +184,13 @@
 .annotation-context-menu button{background:transparent;border:0;border-radius:5px;padding:9px 11px;color:var(--ink);text-align:left;cursor:pointer;font:inherit;font-size:12px}
 .annotation-context-menu button:hover,.annotation-context-menu button:focus-visible{background:var(--surface-2)}
 .annotation-context-menu button.danger{color:#ba555b}
+
+/* Context menu actions for devices in the Vue Flow editor. */
+.device-context-menu{position:absolute;z-index:36;width:207px;display:flex;flex-direction:column;gap:2px;padding:6px;background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:9px;box-shadow:0 10px 32px #0003}
+.device-context-heading{display:flex;flex-direction:column;gap:2px;padding:8px 9px 10px;font-weight:650;font-size:12px;overflow-wrap:anywhere}
+.device-context-heading small{color:var(--muted);font-weight:400;font-size:11px}
+.device-context-divider{height:1px;margin:4px 3px;background:var(--border)}
+.device-context-menu button{display:flex;align-items:center;gap:9px;border:0;background:transparent;color:var(--ink);border-radius:6px;padding:8px 9px;font:inherit;font-size:12px;text-align:left;cursor:pointer}
+.device-context-menu button:hover:not(:disabled),.device-context-menu button:focus-visible{background:var(--surface-2);outline:none}
+.device-context-menu button.danger{color:#ba555b}
+.device-context-menu button:disabled{opacity:.45;cursor:not-allowed}
