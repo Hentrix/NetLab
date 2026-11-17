@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiSelect from '@/components/UiSelect.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { LayoutDashboard, HardDrive, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, GitBranch, Pencil, LogOut, X, ChevronDown } from '@lucide/vue'
+import { LayoutDashboard, HardDrive, Wrench, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, GitBranch, Pencil, LogOut, X, ChevronDown } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
 import { api, portLabel } from '@/api/client'
 import type { Device, Template, PortSpec } from '@/types'
@@ -10,9 +10,10 @@ import SystemOverview from '@/components/SystemOverview.vue'
 import { exportTopology } from '@/topology/snapshot'
 import TerminalDock from '@/components/TerminalDock.vue'
 import ImageLibrary from '@/components/ImageLibrary.vue'
+import Workshop from '@/components/Workshop.vue'
 const store=useNetlabStore()
 const tokenEntry=ref(store.token)
-const page=ref<'labs'|'images'|'system'>('labs')
+const page=ref<'labs'|'images'|'workshop'|'system'>('labs')
 const theme=ref<'light' | 'dark'>(localStorage.getItem('netlab-theme')==='dark'?'dark':'light')
 const newLab=ref('');const createLabOpen=ref(false)
 const addOpen=ref(false)
@@ -268,6 +269,11 @@ function openAddAt(position:{x:number;y:number}){
 }
 function addFromImage(image:string){
   if(!store.activeLab){store.failure='Сначала выберите лабораторию';return}
+  if(store.images.find(item=>item.id===image)?.kind==='iso'){
+    store.failure='ISO является установочным носителем. Для установки откройте «Мастерскую образов».'
+    page.value='workshop'
+    return
+  }
   const profile=store.templates.find(t=>t.engine==='qemu')
   if(!profile){store.failure='Нет доступных шаблонов QEMU';return}
   openAdd()
@@ -278,6 +284,7 @@ function addFromImage(image:string){
 }
 function changeTemplate(){
   const t=selectedTemplate.value
+  if(t?.imageId)imageID.value=t.imageId
   deviceName.value=t?.name||'Устройство'
   deviceKind.value=t?.engine==='vpcs'?'pc':t?.kind||'router'
   deviceIcon.value=defaultKindIcon[deviceKind.value]||'Router.png'
@@ -398,13 +405,14 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
       <div class="side-group-label">РАБОЧАЯ ОБЛАСТЬ</div>
       <button class="nav-link" :class="{active:page==='labs'}" @click="page='labs'"><LayoutDashboard :size="17"/> Лаборатории</button>
       <button class="nav-link" :class="{active:page==='images'}" @click="page='images'"><HardDrive :size="17"/> Библиотека образов</button>
+      <button class="nav-link" :class="{active:page==='workshop'}" @click="page='workshop'"><Wrench :size="17"/> Мастерская образов</button>
       <button class="nav-link" :class="{active:page==='system'}" @click="page='system'"><Activity :size="17"/> Система</button>
       <div class="side-group-label">ЛАБОРАТОРИИ <button title="Новая лаборатория" @click="createLabOpen=true"><Plus :size="15"/></button></div>
       <div class="lab-list"><button v-for="lab in store.labs" :key="lab.id" :class="{active:store.labID===lab.id}" @click="store.labID=lab.id;page='labs';store.selectedID=null"><span class="lab-dot"/>{{lab.name}}</button><p v-if="!store.labs.length" class="secondary-text">Лабораторий пока нет</p></div>
       <div class="side-bottom"><a href="/" title="Текущий стабильный интерфейс">Старый интерфейс</a><a href="https://github.com/Hentrix/NetLab" target="_blank" rel="noreferrer"><GitBranch :size="16"/></a></div>
     </aside>
     <main class="main-view">
-      <header class="top-bar"><span class="breadcrumbs">NETLAB / <strong>{{page==='labs'?(store.activeLab?.name||'Лаборатории'):page==='images'?'Образы':'Система'}}</strong></span>
+      <header class="top-bar"><span class="breadcrumbs">NETLAB / <strong>{{page==='labs'?(store.activeLab?.name||'Лаборатории'):page==='images'?'Образы':page==='workshop'?'Мастерская':'Система'}}</strong></span>
         <div class="top-actions"><span class="small-status"><i :class="{ok:store.live}"/>{{liveStatus}}</span><button title="Светлая / тёмная тема" @click="toggleTheme"><Sun v-if="dark" :size="17"/><Moon v-else :size="17"/>{{dark?'Светлая':'Тёмная'}}</button><button title="Выйти" @click="logout"><LogOut :size="17"/></button></div>
       </header>
       <template v-if="!store.token">
@@ -462,6 +470,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
           <span>{{telemetryLastSuccess?'Телеметрия '+telemetryLastSuccess:'NetLab · Vue'}}</span></footer>
       </template>
       <template v-else-if="page==='images'"><ImageLibrary @create-node="addFromImage"/></template>
+      <template v-else-if="page==='workshop'"><Workshop @open-lab="page='labs'"/></template>
       <template v-else><SystemOverview /></template>
       <div v-if="store.failure" role="alert" class="error-toast" @click="store.failure=''">{{store.failure}} <X :size="16"/></div>
     </main>
