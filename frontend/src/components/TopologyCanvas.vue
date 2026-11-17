@@ -29,6 +29,9 @@ const canvasElement=ref<HTMLElement|null>(null)
 // Keep the native browser middle-click autoscroll from competing with Vue Flow.
 function preventMiddleAutoscroll(event:MouseEvent){
   if(event.button===1)event.preventDefault()
+  // Vue Flow also listens for mousedown, not just pointerdown. Prevent its
+  // right-click selection reset before the custom group menu is opened.
+  if(event.button===2&&store.selectedDeviceIDs.length>1)event.stopPropagation()
 }
 const hoveredDeviceID=ref<string|null>(null)
 const hoveredCableID=ref<string|null>(null)
@@ -97,7 +100,9 @@ function onCanvasPointerDown(event:PointerEvent){
     return
   }
   if(event.button!==0||drawingMode.value!=='marquee'||!(event.target as HTMLElement).closest('.vue-flow__pane'))return
+  if(marqueeGesture)return
   event.preventDefault();event.stopPropagation()
+  closeCanvasContext();closeDeviceContext();dismissContextMenu()
   marqueeGesture={startX:event.clientX,startY:event.clientY,
     additive:event.ctrlKey||event.metaKey||event.shiftKey}
   updateMarquee(event)
@@ -133,7 +138,7 @@ function cancelMarquee(){
 }
 function finishMarquee(event:PointerEvent){
   const gesture=marqueeGesture
-  if(!gesture)return
+  if(!gesture||event.button!==0)return
   const start=screenToFlowCoordinate({x:gesture.startX,y:gesture.startY})
   const end=screenToFlowCoordinate({x:event.clientX,y:event.clientY})
   const x=Math.min(start.x,end.x),y=Math.min(start.y,end.y)
@@ -435,6 +440,12 @@ function openDeviceContext(payload:{id:string;event:MouseEvent}){
     if(position)canvasContextMenu.value={kind:'selection',...position}
     return
   }
+  // Right-clicking outside a multi-selection switches to a single node.
+  // Right-clicking the selected group above preserves the entire selection.
+  selectingWithMouse=true
+  selectedOnCanvas.value=[payload.id]
+  store.selectDeviceGroup([payload.id],payload.id)
+  selectingWithMouse=false
   dismissContextMenu()
   const rect=canvasElement.value?.getBoundingClientRect()
   if(!rect)return
@@ -444,7 +455,7 @@ function openDeviceContext(payload:{id:string;event:MouseEvent}){
     x:Math.max(8,Math.min(Math.max(8,rect.width-menuWidth-8),payload.event.clientX-rect.left)),
     y:Math.max(8,Math.min(Math.max(8,rect.height-menuHeight-8),payload.event.clientY-rect.top))
   }
-  store.selectedID=payload.id
+  store.selectDeviceGroup([payload.id],payload.id)
 }
 function startCableFromContext(){
   const item=contextDevice.value
@@ -757,7 +768,7 @@ function closeEditor(){editingID.value=null}
 <template>
   <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @pointerdown.capture="onCanvasPointerDown($event);startAnnotationGesture($event)" @mousedown.capture="preventMiddleAutoscroll" @auxclick="preventMiddleAutoscroll" @dragover="onCanvasDragOver" @drop="onCanvasDrop" @click.self="dismissContextMenu();closeDeviceContext();closeCanvasContext()">
     <VueFlow id="netlab-topology" :nodes="nodes" :edges="edges" :nodes-draggable="!panMode" :nodes-connectable="!panMode"
-       :elements-selectable="!panMode" :pan-on-drag="panMode ? [0,1] : [1]" :selection-on-drag="!panMode&&drawingMode!=='marquee'"
+       :elements-selectable="!panMode" :pan-on-drag="panMode ? [0,1] : [1]" :selection-on-drag="!panMode&&drawingMode==='select'&&!cableMode"
       :multi-selection-key-code="['Control','Meta','Shift']"
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
       @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="paneClickAt" @pane-double-click="paneDoubleClick" @pane-context-menu="openPaneContext" @selection-start="selectingArea=true" @selection-end="selectingArea=false" @selection-change="selectionChanged">
