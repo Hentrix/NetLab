@@ -63,6 +63,25 @@ async function performBulk(operation:'start'|'stop'|'delete'){
   }finally{bulkBusy.value=false}
 }
 const selectedTab=ref<'overview'|'ports'>('overview')
+const hardwareOpen=ref(false)
+const hardwareSaving=ref(false)
+const hardwareID=ref('')
+const hardwareDraft=ref<Device|null>(null)
+const hardwareLocked=computed(()=>store.activeLab?.nodes.some(node=>node.status==='running')||false)
+function editHardware(device:Device){
+  if(device.engine==='vpcs')return
+  hardwareID.value=device.id
+  hardwareDraft.value={...device,ports:device.ports?.map(port=>({...port}))}
+  hardwareOpen.value=true
+}
+async function saveHardware(){
+  if(!hardwareDraft.value||hardwareLocked.value||hardwareSaving.value)return
+  hardwareSaving.value=true
+  try{
+    await store.configureQemuNode(hardwareID.value,hardwareDraft.value)
+    hardwareOpen.value=false
+  }finally{hardwareSaving.value=false}
+}
 const portEditorOpen=ref(false)
 const portEditorDevice=ref('')
 const portDraft=ref<PortSpec[]>([])
@@ -182,7 +201,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
           </div></div><button class="add-row" @click="openAdd"><Plus :size="16"/> Добавить устройство</button></aside>
           <TopologyCanvas @console="consoleOpen" @add="openAdd" />
           <aside class="inspector"><template v-if="store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
-            <template v-if="selectedTab==='overview'"><div class="inspector-content"><label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong><label>vCPU / RAM</label><strong>{{store.selectedNode.engine==='vpcs'?'—':`${store.selectedNode.cpus||1} / ${store.selectedNode.ram||256} МБ`}}</strong><label>Интерфейсы</label><strong>{{store.selectedNode.nicCount||16}}</strong></div><div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
+            <template v-if="selectedTab==='overview'"><div class="inspector-content"><label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong><label>vCPU / RAM</label><strong>{{store.selectedNode.engine==='vpcs'?'—':`${store.selectedNode.cpus||1} / ${store.selectedNode.ram||256} МБ`}}</strong><label>Интерфейсы</label><strong>{{store.selectedNode.nicCount||16}}</strong></div><div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
             <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{cable.aPort}} ↔ {{cable.bPort}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
           </template><div v-else class="inspector-empty">Выберите устройство<br/>на топологии</div></aside>
         </div>
@@ -197,6 +216,21 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
       <div v-if="store.failure" role="alert" class="error-toast" @click="store.failure=''">{{store.failure}} <X :size="16"/></div>
     </main>
     <TerminalDock ref="terminal" :theme="theme" />
+    <div v-if="hardwareOpen&&hardwareDraft" class="dialog-overlay" @click.self="!hardwareSaving&&(hardwareOpen=false)">
+      <form class="dialog-card hardware-dialog" @submit.prevent="saveHardware">
+        <h2>Параметры QEMU</h2>
+        <p>Изменения применяются при следующем запуске. Для сохранения необходимо остановить все устройства лаборатории.</p>
+        <p v-if="hardwareLocked" class="hardware-warning">Остановите лабораторию перед сохранением параметров.</p>
+        <label>Образ диска<select v-model="hardwareDraft.imageId" required><option v-for="image in store.images" :key="image.id" :value="image.id">{{image.name}}</option></select></label>
+        <div class="dialog-columns"><label>Оперативная память, МиБ<input v-model.number="hardwareDraft.ram" type="number" min="128" max="131072" required/></label>
+        <label>vCPU<input v-model.number="hardwareDraft.cpus" type="number" min="1" max="64" required/></label></div>
+        <div class="dialog-columns"><label>Ethernet-порты<input v-model.number="hardwareDraft.nicCount" type="number" min="1" max="16" required/></label>
+        <label>Сетевая карта<select v-model="hardwareDraft.nicModel"><option value="virtio-net-pci">VirtIO</option><option value="e1000">Intel E1000</option><option value="rtl8139">RTL8139</option></select></label></div>
+        <label>Дисковая шина<select v-model="hardwareDraft.diskBus"><option value="virtio">VirtIO</option><option value="ide">IDE</option><option value="scsi">SCSI</option></select></label>
+        <p>Изменение образа после создания overlay-диска запрещено backend. При уменьшении числа портов сначала удалите кабели, подключённые к исключаемым интерфейсам.</p>
+        <div class="dialog-actions"><button type="button" :disabled="hardwareSaving" @click="hardwareOpen=false">Отмена</button><button class="primary" :disabled="hardwareSaving||hardwareLocked">Сохранить</button></div>
+      </form>
+    </div>
     <div v-if="bulkOpen" class="dialog-overlay" @click.self="!bulkBusy&&(bulkOpen=false)">
       <div class="dialog-card bulk-dialog" role="dialog" aria-label="Массовые действия с устройствами">
         <h2>Массовые действия</h2>
