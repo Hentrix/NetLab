@@ -302,7 +302,7 @@ func (e *Engine) Start(l Lab, n Node, img Image) error {
 		accel = "kvm"
 		cpu = "host"
 	}
-	args := []string{"-name", "netlab-" + n.ID, "-machine", "pc,accel=" + accel, "-cpu", cpu, "-smp", strconv.Itoa(n.CPUs), "-m", strconv.Itoa(n.RAM), "-display", "none", "-vga", "std", "-device", "usb-tablet", "-vnc", "unix:" + vncSock + ",websocket=unix:" + vncWSSock, "-monitor", "none", "-no-reboot", "-qmp", "unix:" + qmp + ",server=on,wait=off", "-serial", "unix:" + serial + ",server=on,wait=off", "-drive", "file=" + overlay + ",format=qcow2,if=" + n.DiskBus + ",cache=none"}
+	args := []string{"-name", "netlab-" + n.ID, "-machine", "pc,accel=" + accel, "-cpu", cpu, "-smp", strconv.Itoa(n.CPUs), "-m", strconv.Itoa(n.RAM), "-display", "none", "-vga", "std", "-device", "usb-tablet", "-vnc", "unix:" + vncSock + ",websocket=unix:" + vncWSSock, "-monitor", "none", "-no-reboot", "-qmp", "unix:" + qmp + ",server=on,wait=off", "-serial", "unix:" + serial + ",server=on,wait=off", "-drive", "file=" + overlay + ",format=qcow2,if=" + n.DiskBus + ",cache=none,aio=threads"}
 	if n.InstallISOID!="" {
 		iso:=filepath.Join(e.data,"images",n.InstallISOID+".iso")
 		if _,err:=os.Stat(iso);err!=nil{return fmt.Errorf("ISO не найден: %w",err)}
