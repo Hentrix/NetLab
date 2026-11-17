@@ -44,6 +44,11 @@ const bulkBusy=ref(false)
 const bulkCandidates=computed(()=>store.activeLab?.nodes||[])
 const bulkNames=computed(()=>bulkCandidates.value.filter(n=>bulkSelected.value.includes(n.id)).map(n=>n.name))
 function openBulk(){bulkSelected.value=[];bulkOpen.value=true}
+function openBulkFromCanvas(ids:string[]){
+  const available=new Set(store.activeLab?.nodes.map(n=>n.id)||[])
+  bulkSelected.value=[...new Set(ids)].filter(id=>available.has(id))
+  bulkOpen.value=true
+}
 function selectAllBulk(){bulkSelected.value=bulkCandidates.value.map(n=>n.id)}
 function selectRunningBulk(){bulkSelected.value=bulkCandidates.value.filter(n=>n.status==='running').map(n=>n.id)}
 function selectStoppedBulk(){bulkSelected.value=bulkCandidates.value.filter(n=>n.status!=='running').map(n=>n.id)}
@@ -199,7 +204,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
               <span><b>{{node.name}}</b><small>{{imageName(node)}}</small></span><i :class="node.status"/>
             </button></template>
           </div></div><button class="add-row" @click="openAdd"><Plus :size="16"/> Добавить устройство</button></aside>
-          <TopologyCanvas @console="consoleOpen" @add="openAdd" />
+          <TopologyCanvas @console="consoleOpen" @add="openAdd" @bulk="openBulkFromCanvas" />
           <aside class="inspector"><template v-if="store.selectedNode"><h3>СВОЙСТВА УСТРОЙСТВА</h3><div class="inspector-name">{{store.selectedNode.name}}<small><i :class="store.selectedNode.status"/> {{store.selectedNode.status==='running'?'Запущен':'Остановлен'}}</small></div><div class="inspector-tabs"><button :class="{active:selectedTab==='overview'}" @click="selectedTab='overview'">Обзор</button><button :class="{active:selectedTab==='ports'}" @click="selectedTab='ports'">Интерфейсы</button></div>
             <template v-if="selectedTab==='overview'"><div class="inspector-content"><label>Движок</label><strong>{{store.selectedNode.engine==='vpcs'?'VPCS':'QEMU / KVM'}}</strong><label>vCPU / RAM</label><strong>{{store.selectedNode.engine==='vpcs'?'—':`${store.selectedNode.cpus||1} / ${store.selectedNode.ram||256} МБ`}}</strong><label>Интерфейсы</label><strong>{{store.selectedNode.nicCount||16}}</strong></div><div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
             <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{cable.aPort}} ↔ {{cable.bPort}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
