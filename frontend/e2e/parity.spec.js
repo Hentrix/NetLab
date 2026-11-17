@@ -23,10 +23,10 @@ async function mockNetLab(page) {
       inputs.push({path,text:data?.text})
       body={}
     }else if(method==='GET'&&path.endsWith('/console/stream')){
-      const text='Welcome to Virtual PC Simulator\\r\\nVPCS> '
+      const text='Welcome to Virtual PC Simulator\r\nVPCS> '
       const chunk=Buffer.from(text,'utf8').toString('base64')
       return route.fulfill({status:200,headers:{'Content-Type':'text/event-stream','Cache-Control':'no-store'},
-        body:`event: output\\ndata: ${JSON.stringify({cursor:1,chunk})}\\n\\n`})
+        body:`event: output\ndata: ${JSON.stringify({cursor:1,chunk})}\n\n`})
     }else if(method==='POST'&&path==='/api/labs/lab1/nodes'){
       const data=request.postDataJSON()
       added.push(data)
@@ -49,7 +49,7 @@ async function mockNetLab(page) {
   return {lab,inputs,added}
 }
 async function openLab(page){
-  await page.goto('/')
+  await page.goto('/next/')
   await expect(page.locator('.device-entry')).toHaveCount(2)
   await expect(page.locator('.vue-flow__node-device')).toHaveCount(2)
 }
