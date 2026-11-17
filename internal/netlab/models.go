@@ -106,6 +106,7 @@ type Link struct {
 type Lab struct {
 	ID          string       `json:"id"`
 	Name        string       `json:"name"`
+	Workshop    bool         `json:"workshop,omitempty"`
 	CreatedAt   time.Time    `json:"createdAt"`
 	Nodes       []Node       `json:"nodes"`
 	Links       []Link       `json:"links"`

@@ -416,6 +416,7 @@ func (s *Server) labsAPI(w http.ResponseWriter, r *http.Request, p []string) {
 		if r.Method == "POST" {
 			var req struct {
 				Name string `json:"name"`
+				Workshop bool `json:"workshop,omitempty"`
 			}
 			if !decode(w, r, &req) {
 				return
@@ -424,7 +425,7 @@ func (s *Server) labsAPI(w http.ResponseWriter, r *http.Request, p []string) {
 				fail(w, 400, err.Error())
 				return
 			}
-			lab := Lab{ID: newID(), Name: strings.TrimSpace(req.Name), CreatedAt: time.Now(), Nodes: []Node{}, Links: []Link{}, Annotations: []Annotation{}}
+			lab := Lab{ID: newID(), Name: strings.TrimSpace(req.Name), Workshop:req.Workshop, CreatedAt: time.Now(), Nodes: []Node{}, Links: []Link{}, Annotations: []Annotation{}}
 			s.store.mu.Lock()
 			s.store.State.Labs = append(s.store.State.Labs, lab)
 			err := s.store.save()
