@@ -18,6 +18,10 @@ type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'i
 const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'add-at',position:{x:number;y:number}):void; (e:'bulk', ids:string[]):void; (e:'device-action', payload:{id:string;action:DeviceContextAction}):void; (e:'delete-selection',ids:string[]):void; (e:'template-at',payload:{templateID:string;x:number;y:number}):void }>()
 const { fitView, zoomIn, zoomOut, setViewport, updateNodeInternals, viewport, screenToFlowCoordinate } = useVueFlow({ id:'netlab-topology' })
 const canvasElement=ref<HTMLElement|null>(null)
+// Keep the native browser middle-click autoscroll from competing with Vue Flow.
+function preventMiddleAutoscroll(event:MouseEvent){
+  if(event.button===1)event.preventDefault()
+}
 const hoveredDeviceID=ref<string|null>(null)
 const hoveredCableID=ref<string|null>(null)
 const hoverTip=ref<{left:number;top:number;text:string}|null>(null)
@@ -598,9 +602,9 @@ function doubleClick(event:{node:{id:string}}){
 function closeEditor(){editingID.value=null}
 </script>
 <template>
-  <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @pointerdown.capture="startAnnotationGesture" @dragover="onCanvasDragOver" @drop="onCanvasDrop" @click.self="dismissContextMenu();closeDeviceContext();closeCanvasContext()">
+  <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @pointerdown.capture="startAnnotationGesture" @mousedown.capture="preventMiddleAutoscroll" @auxclick="preventMiddleAutoscroll" @dragover="onCanvasDragOver" @drop="onCanvasDrop" @click.self="dismissContextMenu();closeDeviceContext();closeCanvasContext()">
     <VueFlow id="netlab-topology" :nodes="nodes" :edges="edges" :nodes-draggable="!panMode" :nodes-connectable="!panMode"
-      :elements-selectable="!panMode" :pan-on-drag="panMode" :selection-on-drag="!panMode"
+      :elements-selectable="!panMode" :pan-on-drag="panMode ? [0,1] : [1]" :selection-on-drag="!panMode"
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
       @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="paneClickAt" @pane-double-click="paneDoubleClick" @pane-context-menu="openPaneContext" @selection-change="selectionChanged">
       <Background pattern-color="var(--grid)" :gap="20" :size="1" />
