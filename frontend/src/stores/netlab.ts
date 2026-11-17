@@ -70,6 +70,9 @@ export const useNetlabStore = defineStore('netlab', () => {
     images.value=await api<ImageRecord[]>(token.value,'images')
     return image
   }
+  async function refreshImages(){
+    images.value=await action(()=>api<ImageRecord[]>(token.value,'images'))
+  }
   async function deleteImage(id: string) {
     await action(()=>api<unknown>(token.value,`images/${id}`,{method:'DELETE'}))
     images.value=await api<ImageRecord[]>(token.value,'images')
@@ -193,6 +196,6 @@ export const useNetlabStore = defineStore('netlab', () => {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
   }
   return {token,labs,images,templates,system,metrics,checking,labID,selectedID,busy,failure,live,activeLab,selectedNode,
-    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
+    authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,refreshImages,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
     removeNode,updateNode,configureQemuNode,bulkNodes,moveTopologyItems,connect,disconnect,updateCable,labPower}
 })

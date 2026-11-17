@@ -8,6 +8,7 @@ import TopologyCanvas from '@/components/TopologyCanvas.vue'
 import SystemOverview from '@/components/SystemOverview.vue'
 import { exportTopology } from '@/topology/snapshot'
 import TerminalDock from '@/components/TerminalDock.vue'
+import ImageLibrary from '@/components/ImageLibrary.vue'
 const store=useNetlabStore()
 const tokenEntry=ref(store.token)
 const page=ref<'labs'|'images'|'system'>('labs')
@@ -17,21 +18,6 @@ const addOpen=ref(false)
 const batchCount=ref(1)
 const templateID=ref('vpcs');const imageID=ref('');const deviceName=ref('');const nicCount=ref(4)
 const inFlight=ref(false)
-const uploadBusy=ref(false)
-const imageFile=ref<File|null>(null)
-async function uploadSelectedImage(){
-  if(!imageFile.value||uploadBusy.value)return
-  uploadBusy.value=true
-  try { await store.uploadImage(imageFile.value); imageFile.value=null }
-  finally { uploadBusy.value=false }
-}
-function selectImageFile(event:Event){
-  imageFile.value=(event.target as HTMLInputElement).files?.[0]||null
-}
-async function removeImage(id:string){
-  if(!confirm('Удалить образ? Он не должен использоваться устройствами.'))return
-  await store.deleteImage(id)
-}
 async function removeLab(){
   const lab=store.activeLab
   if(!lab||!confirm(`Удалить лабораторию «${lab.name}» со всеми узлами и overlay-дисками? Действие необратимо.`))return
@@ -116,6 +102,11 @@ const portStyles=[{value:'eth',name:'eth0, eth1'},{value:'ether',name:'ether1, e
 const speeds=[0,10,100,1000,10000,25000,40000,100000]
 const terminal=ref<InstanceType<typeof TerminalDock>|null>(null)
 const selectedTemplate=computed(()=>store.templates.find(t=>t.id===templateID.value))
+const profileSearch=ref('')
+const filteredTemplates=computed(()=>store.templates.filter(t=>
+  !profileSearch.value.trim()||`${t.name} ${t.kind||''} ${t.engine||''}`.toLocaleLowerCase().includes(profileSearch.value.trim().toLocaleLowerCase())
+))
+function chooseTemplate(id:string){templateID.value=id;changeTemplate()}
 const filteredNodes=computed(()=>store.activeLab?.nodes.filter(n=>n.name.toLowerCase().includes(search.value.toLowerCase()))||[])
 const deviceGroups=computed(()=>[
   {id:'routers',title:'Маршрутизаторы',devices:filteredNodes.value.filter(n=>['router','switch','firewall'].includes(n.kind||''))},
@@ -132,7 +123,25 @@ let interval:ReturnType<typeof setInterval>|null=null
 function toggleTheme(){theme.value=dark.value?'light':'dark';document.documentElement.dataset.theme=theme.value;localStorage.setItem('netlab-theme',theme.value)}
 async function login(){store.authenticate(tokenEntry.value);await store.bootstrap()}
 async function submitLab(){if(!newLab.value.trim())return;await store.createLab(newLab.value);createLabOpen.value=false;newLab.value=''}
-function openAdd(){batchCount.value=1;templateID.value=store.templates[0]?.id||'vpcs';imageID.value=store.images[0]?.id||'';deviceName.value=selectedTemplate.value?.name||'Устройство';nicCount.value=selectedTemplate.value?.nicCount||4;addOpen.value=true}
+function openAdd(){
+  batchCount.value=1
+  profileSearch.value=''
+  templateID.value=store.templates[0]?.id||'vpcs'
+  imageID.value=store.images[0]?.id||''
+  deviceName.value=selectedTemplate.value?.name||'Устройство'
+  nicCount.value=selectedTemplate.value?.nicCount||4
+  addOpen.value=true
+}
+function addFromImage(image:string){
+  if(!store.activeLab){store.failure='Сначала выберите лабораторию';return}
+  const profile=store.templates.find(t=>t.engine==='qemu')
+  if(!profile){store.failure='Нет доступных шаблонов QEMU';return}
+  openAdd()
+  templateID.value=profile.id
+  changeTemplate()
+  imageID.value=image
+  page.value='labs'
+}
 function changeTemplate(){deviceName.value=selectedTemplate.value?.name||'Устройство';nicCount.value=selectedTemplate.value?.engine==='vpcs'?1:selectedTemplate.value?.nicCount||4}
 async function addDevice(){
   const t:Template|undefined=selectedTemplate.value;if(!t||!store.activeLab)return
@@ -231,10 +240,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
         <div v-else class="empty-panel"><Router :size="38"/><h2>Создайте лабораторию</h2><p>Устройства, кабели и настройки будут сохранены на Debian-сервере.</p><button class="primary" @click="createLabOpen=true"><Plus :size="16"/> Новая лаборатория</button></div>
         <footer class="status-bar"><span><i :class="{ok:store.live}"/>{{liveStatus}}</span><span>{{store.activeLab?.nodes.length||0}} устройств</span><span>{{store.activeLab?.links.length||0}} соединений</span><span>NetLab · экспериментальный Vue-редактор</span></footer>
       </template>
-      <template v-else-if="page==='images'"><div class="simple-page"><h1>Библиотека образов</h1><p>QCOW2 и RAW загружаются на сервер. Для импорта используется проверка формата через qemu-img.</p>
-        <form class="image-upload" @submit.prevent="uploadSelectedImage"><label>Файл диска<input type="file" accept=".qcow2,.img,.raw,.qcow" @change="selectImageFile"/></label><button class="primary" type="submit" :disabled="uploadBusy||!imageFile">{{uploadBusy?'Загрузка…':'Загрузить образ'}}</button></form>
-        <div v-for="image in store.images" :key="image.id" class="list-row"><HardDrive :size="18"/><span>{{image.name}}</span><small>{{image.format}} · {{image.size?Math.round(image.size/1048576)+' МиБ':''}}</small><button class="danger" title="Удалить образ" @click="removeImage(image.id)"><Trash2 :size="15"/></button></div>
-        <p v-if="!store.images.length">Образы пока не загружены.</p></div></template>
+      <template v-else-if="page==='images'"><ImageLibrary @create-node="addFromImage"/></template>
       <template v-else><SystemOverview /></template>
       <div v-if="store.failure" role="alert" class="error-toast" @click="store.failure=''">{{store.failure}} <X :size="16"/></div>
     </main>
@@ -293,6 +299,30 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
         <div class="dialog-actions"><button type="button" @click="portEditorOpen=false">Отмена</button><button class="primary" :disabled="portSaving">Сохранить</button></div>
       </form>
     </div>
-    <div v-if="addOpen" class="dialog-overlay" @click.self="addOpen=false"><form class="dialog-card" @submit.prevent="addDevice"><h2>Добавить устройство</h2><label>Профиль<select v-model="templateID" @change="changeTemplate"><option v-for="t in store.templates" :key="t.id" :value="t.id">{{t.name}}</option></select></label><label>Название<input v-model="deviceName" required /></label><label>Количество<input v-model.number="batchCount" type="number" min="1" max="32" required /></label><template v-if="selectedTemplate?.engine!=='vpcs'"><label>Образ<select v-model="imageID" required><option v-for="i in store.images" :key="i.id" :value="i.id">{{i.name}}</option></select></label><label>Число Ethernet-портов<input v-model.number="nicCount" type="number" min="1" max="32"/></label></template><p v-else>VPCS не требует образа диска. Доступен один порт eth0.</p><div class="dialog-actions"><button type="button" @click="addOpen=false">Отмена</button><button class="primary" :disabled="inFlight||(selectedTemplate?.engine!=='vpcs'&&!imageID)">Добавить</button></div></form></div>
+    <div v-if="addOpen" class="dialog-overlay" @click.self="addOpen=false">
+      <form class="dialog-card device-create-dialog" @submit.prevent="addDevice">
+        <h2>Добавить устройство</h2>
+        <p>Выберите профиль эмулятора. Параметры будут использованы при создании новых устройств.</p>
+        <input v-model="profileSearch" placeholder="Поиск профиля" aria-label="Поиск профиля"/>
+        <div class="profile-catalog" role="group" aria-label="Профили устройств">
+          <button v-for="profile in filteredTemplates" :key="profile.id" type="button" class="profile-card"
+            :class="{active:templateID===profile.id}" :aria-pressed="templateID===profile.id" @click="chooseTemplate(profile.id)">
+            <Monitor v-if="profile.engine==='vpcs'" :size="20"/><Router v-else :size="20"/>
+            <span><strong>{{profile.name}}</strong><small>{{profile.engine==='vpcs'?'VPCS · без образа':'QEMU / KVM'}} · {{profile.nicCount|| (profile.engine==='vpcs'?1:16)}} портов</small></span>
+          </button>
+          <p v-if="!filteredTemplates.length">Профили не найдены.</p>
+        </div>
+        <label>Название<input v-model="deviceName" required maxlength="80"/></label>
+        <label>Количество<input v-model.number="batchCount" type="number" min="1" max="32" required/></label>
+        <template v-if="selectedTemplate?.engine!=='vpcs'">
+          <label>Образ<select v-model="imageID" required><option v-for="image in store.images" :key="image.id" :value="image.id">{{image.name}}</option></select></label>
+          <label>Число Ethernet-портов<input v-model.number="nicCount" type="number" min="1" max="32" required/></label>
+          <p v-if="!store.images.length">Для QEMU необходимо сначала загрузить образ в библиотеку.</p>
+        </template>
+        <p v-else>VPCS не требует образа диска. Доступен один интерфейс eth0.</p>
+        <div class="dialog-actions"><button type="button" @click="addOpen=false">Отмена</button>
+          <button class="primary" :disabled="inFlight||!selectedTemplate||(selectedTemplate.engine!=='vpcs'&&!imageID)">Добавить</button></div>
+      </form>
+    </div>
   </div>
 </template>
