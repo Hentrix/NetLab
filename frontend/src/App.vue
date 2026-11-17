@@ -57,8 +57,8 @@ async function performBulk(operation:'start'|'stop'|'delete'){
   bulkBusy.value=true
   try{
     const result=await store.bulkNodes(ids,operation)
-    const failedIds=new Set(result.failed.map(error=>error.split(':')[0]))
-    bulkSelected.value=store.activeLab?.nodes.filter(node=>ids.includes(node.id)&&failedIds.has(node.name)).map(node=>node.id)||[]
+    const failedIds=new Set(result.failed.map(item=>item.id))
+    bulkSelected.value=store.activeLab?.nodes.filter(node=>ids.includes(node.id)&&failedIds.has(node.id)).map(node=>node.id)||[]
     if(!result.failed.length)bulkOpen.value=false
   }finally{bulkBusy.value=false}
 }
