@@ -372,7 +372,13 @@ async function deviceContextAction(payload:{id:string;action:DeviceContextAction
 onMounted(()=>{
   document.documentElement.dataset.theme=theme.value
   if(store.token){void store.bootstrap();void refreshTelemetry()}
-  interval=setInterval(()=>{if(store.token&&!inFlight.value&&page.value==='labs')void store.refresh()},3500)
+  interval=setInterval(()=>{
+    if(!store.token||inFlight.value||page.value!=='labs')return
+    // As in legacy: never replace topology data while the user drags,
+    // selects, edits a dialog or stretches an annotation.
+    if(document.querySelector('.dialog-overlay,.vue-flow__node.dragging,.vue-flow__selection-rect,.canvas-annotation-preview'))return
+    void store.pollActiveLab()
+  },3500)
   telemetryInterval=setInterval(()=>{if(store.token&&page.value==='labs')void refreshTelemetry()},15000)
 })
 onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)clearInterval(telemetryInterval)})
