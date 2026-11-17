@@ -163,6 +163,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	case "images":
 		s.imagesAPI(w, r, parts)
 		return
+	case "workshop":
+		s.workshopAPI(w, r, parts)
+		return
 	case "labs":
 		s.labsAPI(w, r, parts)
 		return
@@ -262,12 +265,14 @@ func (s *Server) imagesAPI(w http.ResponseWriter, r *http.Request, p []string) {
 			return
 		}
 	}
+	if len(p)==2 && p[1]=="blank" && r.Method==http.MethodPost { s.createBlankImage(w,r);return }
+	if len(p)==2 && validID(p[1]) && r.Method==http.MethodPatch { s.updateImageMetadata(w,r,p[1]);return }
 	if len(p) == 2 && r.Method == "DELETE" && validID(p[1]) {
 		s.store.mu.Lock()
 		defer s.store.mu.Unlock()
 		for _, lab := range s.store.State.Labs {
 			for _, n := range lab.Nodes {
-				if n.ImageID == p[1] {
+				if n.ImageID == p[1] || n.InstallISOID == p[1] {
 					fail(w, 409, "образ используется лабораторией")
 					return
 				}
@@ -289,11 +294,7 @@ func (s *Server) imagesAPI(w http.ResponseWriter, r *http.Request, p []string) {
 	fail(w, 404, "образ не найден")
 }
 func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request) {
-	if _, err := exec.LookPath("qemu-img"); err != nil {
-		fail(w, 503, "требуется пакет qemu-utils")
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8<<30)
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<30)
 	mr, err := r.MultipartReader()
 	if err != nil {
 		fail(w, 400, "ожидался multipart/form-data")
@@ -326,10 +327,14 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "пустой образ")
 		return
 	}
-	format, err := imageInfo(tmp)
-	if err != nil {
-		fail(w, 422, err.Error())
-		return
+	format := ""
+	if strings.EqualFold(filepath.Ext(filename),".iso") {
+		if err := validateInstallerISO(tmp); err != nil { fail(w,422,err.Error());return }
+		format="iso"
+	}else{
+		if _, err := exec.LookPath("qemu-img"); err != nil { fail(w,503,"требуется пакет qemu-utils");return }
+		format, err = imageInfo(tmp)
+		if err != nil { fail(w,422,err.Error());return }
 	}
 	final := filepath.Join(s.data, "images", id+"."+format)
 	if err := os.Rename(tmp, final); err != nil {
@@ -341,7 +346,9 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request) {
 		gid, _ := parseInt(u.Gid)
 		_ = os.Chown(final, uid, gid)
 	}
-	img := Image{ID: id, Name: filename, Size: size, Format: format, CreatedAt: time.Now()}
+	kind:="disk"
+	if format=="iso" { kind="iso" }
+	img := Image{ID: id, Name: filename, Size: size, Format: format, Kind: kind, CreatedAt: time.Now()}
 	s.store.mu.Lock()
 	s.store.State.Images = append(s.store.State.Images, img)
 	err = s.store.save()
@@ -361,8 +368,12 @@ func (s *Server) startNode(l Lab, n Node) error {
 		return s.engine.StartVPCS(l, n)
 	}
 	img := findImage(&s.store.State, n.ImageID)
-	if img == nil {
-		return fmt.Errorf("образ узла %s не найден", n.Name)
+	if img == nil || img.isISO() {
+		return fmt.Errorf("дисковый образ узла %s не найден", n.Name)
+	}
+	if n.InstallISOID!="" {
+		iso:=findImage(&s.store.State,n.InstallISOID)
+		if iso==nil || !iso.isISO() { return fmt.Errorf("ISO установщика узла %s не найден",n.Name) }
 	}
 	return s.engine.Start(l, n, *img)
 }
@@ -508,7 +519,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			fail(w, 400, err.Error())
 			return
 		}
-		if req.Template.Engine != "vpcs" && findImage(&s.store.State, req.Template.ImageID) == nil {
+		if req.Template.Engine != "vpcs" && !s.validNodeMedia(req.Template) {
 			fail(w, 404, "образ не найден")
 			return
 		}
@@ -556,7 +567,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 			fail(w, 400, err.Error())
 			return
 		}
-		if req.Engine != "vpcs" && findImage(&s.store.State, req.ImageID) == nil {
+		if req.Engine != "vpcs" && !s.validNodeMedia(req) {
 			fail(w, 404, "образ не найден")
 			return
 		}
@@ -662,7 +673,7 @@ func (s *Server) nodesAPI(w http.ResponseWriter, r *http.Request, p []string, l 
 				fail(w, 400, err.Error())
 				return
 			}
-			if req.Engine != "vpcs" && findImage(&s.store.State, req.ImageID) == nil {
+			if req.Engine != "vpcs" && !s.validNodeMedia(req) {
 				fail(w, 404, "образ не найден")
 				return
 			}

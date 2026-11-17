@@ -299,6 +299,11 @@ func (e *Engine) Start(l Lab, n Node, img Image) error {
 		cpu = "host"
 	}
 	args := []string{"-name", "netlab-" + n.ID, "-machine", "pc,accel=" + accel, "-cpu", cpu, "-smp", strconv.Itoa(n.CPUs), "-m", strconv.Itoa(n.RAM), "-display", "none", "-monitor", "none", "-no-reboot", "-qmp", "unix:" + qmp + ",server=on,wait=off", "-serial", "unix:" + serial + ",server=on,wait=off", "-drive", "file=" + overlay + ",format=qcow2,if=" + n.DiskBus + ",cache=none"}
+	if n.InstallISOID!="" {
+		iso:=filepath.Join(e.data,"images",n.InstallISOID+".iso")
+		if _,err:=os.Stat(iso);err!=nil{return fmt.Errorf("ISO не найден: %w",err)}
+		args=append(args,"-drive","file="+iso+",media=cdrom,readonly=on","-boot","order=d")
+	}
 	for port := 0; port < capacity; port++ {
 		tap := tapName(n.ID, port)
 		netID, deviceID := netdevID(port), nicID(port)
