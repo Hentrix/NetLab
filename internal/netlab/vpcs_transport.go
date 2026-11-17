@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -69,7 +70,22 @@ func (t *vpcsTransport) start(peerPort int) {
 }
 func (t *vpcsTransport) close() {
 	t.closeOnce.Do(func() { close(t.closed); _ = t.udp.Close(); _ = t.tap.Close() })
-	t.wg.Wait()
+	if !waitForTransportWorkers(t.wg.Wait, 2*time.Second) {
+		// Do not block the node's done channel (and API Stop) if an
+		// underlying TAP read fails to unblock after its fd was closed.
+		log.Print("VPCS UDP/TAP relay: cleanup exceeded 2 seconds")
+	}
+}
+
+func waitForTransportWorkers(wait func(), timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() { wait(); close(done) }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 func (t *vpcsTransport) udpToTap() {
 	buf := make([]byte, 65536)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestVPCSNodeValidation(t *testing.T) {
@@ -84,7 +85,7 @@ func TestVPCSAPIWithoutDisk(t *testing.T) {
 type captureVPCSInput struct{ bytes.Buffer }
 func (w *captureVPCSInput) Close() error { return nil }
 
-func TestVPCSControlCDoesNotReachPTY(t *testing.T) {
+func TestVPCSControlCSendsPTYAndScopedSignal(t *testing.T) {
 	writer := &captureVPCSInput{}
 	console := &Console{writer: writer}
 	interrupts := 0
@@ -97,11 +98,11 @@ func TestVPCSControlCDoesNotReachPTY(t *testing.T) {
 	if interrupts != 1 {
 		t.Fatalf("expected exactly one VPCS SIGINT, got %d", interrupts)
 	}
-	if got, want := writer.String(), "ping 192.168.100.3\r"+"ip 192.168.100.2\r"; got != want {
+	if got, want := writer.String(), "ping 192.168.100.3\r\x03"+"ip 192.168.100.2\r"; got != want {
 		t.Fatalf("unexpected PTY bytes: %q, want %q", got, want)
 	}
-	if bytes.Contains(writer.Bytes(), []byte{0x03}) {
-		t.Fatal("Ctrl+C passed to PTY instead of isolated process group")
+	if bytes.Count(writer.Bytes(), []byte{0x03}) != 1 {
+		t.Fatal("VPCS readline must receive exactly one ETX")
 	}
 }
 
@@ -113,7 +114,37 @@ func TestVPCSControlCInterruptErrorStopsInput(t *testing.T) {
 	if err == nil || !errors.Is(err, stop) {
 		t.Fatalf("expected signal failure: %v", err)
 	}
-	if writer.String() != "before" {
+	if writer.String() != "before\x03" {
 		t.Fatalf("input continued after failure: %q", writer.String())
+	}
+}
+
+func TestVPCSTransportCleanupTimeout(t *testing.T) {
+	begin := time.Now()
+	if waitForTransportWorkers(func() { time.Sleep(120*time.Millisecond) }, 20*time.Millisecond) {
+		t.Fatal("blocked relay should report timeout")
+	}
+	if time.Since(begin) > 100*time.Millisecond {
+		t.Fatal("transport cleanup blocked the caller")
+	}
+	if !waitForTransportWorkers(func() {}, time.Second) {
+		t.Fatal("completed relay should not time out")
+	}
+}
+
+func TestStopWaitIsBoundedAfterKill(t *testing.T) {
+	done := make(chan struct{})
+	forced := false
+	begin := time.Now()
+	err := waitForInstanceStop(done, func() { forced = true }, 10*time.Millisecond, 20*time.Millisecond)
+	if err == nil || !forced {
+		t.Fatalf("expected bounded cleanup error after forced kill, got %v", err)
+	}
+	if time.Since(begin) > 200*time.Millisecond {
+		t.Fatal("stopped node blocked API for too long")
+	}
+	close(done)
+	if err := waitForInstanceStop(done, func() { t.Error("should not force") }, time.Second, time.Second); err != nil {
+		t.Fatal(err)
 	}
 }
