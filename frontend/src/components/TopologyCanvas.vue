@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiSelect from '@/components/UiSelect.vue'
 import { computed, nextTick, ref, watch, onBeforeUnmount, onMounted } from 'vue'
 import { VueFlow, useVueFlow, type Connection } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -689,8 +690,8 @@ function closeEditor(){editingID.value=null}
         <label>Цвет рамки<input v-model="annotationDraft.borderColor" type="color"/></label></div>
         <div class="dialog-columns"><label>Толщина рамки<input v-model.number="annotationDraft.borderWidth" type="number" min="0" max="12"/></label>
         <label>Подгонка высоты<button type="button" @click="fitDraftHeight">Подогнать под текст</button></label></div>
-        <div class="dialog-columns"><label>Фон<select v-model="annotationDraft.background"><option value="transparent">Прозрачный</option><option value="#fff4c4">Жёлтый</option><option value="#e4f1ff">Голубой</option><option value="#f2eaff">Фиолетовый</option><option value="#ffffff">Белый</option></select></label>
-        <label>Выравнивание<select v-model="annotationDraft.align"><option value="left">Слева</option><option value="center">По центру</option><option value="right">Справа</option></select></label></div>
+        <div class="dialog-columns"><label>Фон<UiSelect v-model="annotationDraft.background"><option value="transparent">Прозрачный</option><option value="#fff4c4">Жёлтый</option><option value="#e4f1ff">Голубой</option><option value="#f2eaff">Фиолетовый</option><option value="#ffffff">Белый</option></UiSelect></label>
+        <label>Выравнивание<UiSelect v-model="annotationDraft.align"><option value="left">Слева</option><option value="center">По центру</option><option value="right">Справа</option></UiSelect></label></div>
         <div class="annotation-format"><label><input v-model="annotationDraft.bold" type="checkbox"/> Жирный</label><label><input v-model="annotationDraft.italic" type="checkbox"/> Курсив</label><label><input v-model="annotationDraft.underline" type="checkbox"/> Подчёркнутый</label></div>
         <div class="dialog-actions"><button v-if="annotationID" type="button" class="cable-delete" @click="deleteAnnotation"><Trash2 :size="14"/> Удалить</button><button type="button" @click="annotationOpen=false">Отмена</button>
           <button class="primary" :disabled="annotationSaving||annotationDraft.width<80||annotationDraft.width>1200||annotationDraft.height<36||annotationDraft.height>800">Сохранить</button></div>
@@ -700,8 +701,8 @@ function closeEditor(){editingID.value=null}
       <form class="dialog-card" @submit.prevent="createLink">
         <div class="dialog-heading"><CableIcon :size="18"/><strong>Подключить Ethernet</strong></div>
         <p>{{startName}} ↔ {{endName}}</p>
-        <label>Интерфейс {{startName}}<select v-model.number="chosen.a"><option v-for="p in firstPorts" :key="p" :value="p">{{portLabel(current?.nodes.find(n=>n.id===pending?.a),p)}}</option></select></label>
-        <label>Интерфейс {{endName}}<select v-model.number="chosen.b"><option v-for="p in secondPorts" :key="p" :value="p">{{portLabel(current?.nodes.find(n=>n.id===pending?.b),p)}}</option></select></label>
+        <label>Интерфейс {{startName}}<UiSelect v-model.number="chosen.a"><option v-for="p in firstPorts" :key="p" :value="p">{{portLabel(current?.nodes.find(n=>n.id===pending?.a),p)}}</option></UiSelect></label>
+        <label>Интерфейс {{endName}}<UiSelect v-model.number="chosen.b"><option v-for="p in secondPorts" :key="p" :value="p">{{portLabel(current?.nodes.find(n=>n.id===pending?.b),p)}}</option></UiSelect></label>
         <div class="dialog-actions"><button type="button" @click="pending=null">Отмена</button><button type="submit" class="primary" :disabled="saving||!firstPorts.length||!secondPorts.length">Подключить</button></div>
       </form>
     </div>
@@ -709,12 +710,12 @@ function closeEditor(){editingID.value=null}
       <form class="dialog-card cable-dialog" @submit.prevent="saveLink">
         <div class="dialog-heading"><CableIcon :size="18"/><strong>Настройки Ethernet-кабеля</strong></div>
         <p>Смена интерфейсов переподключает Ethernet на горячую. Оформление не влияет на сеть.</p>
-        <div class="dialog-columns"><label>Устройство A<select v-model="edit.a" @change="changeEndpoint('a')"><option v-for="device in current?.nodes||[]" :key="device.id" :value="device.id">{{device.name}}</option></select></label>
-          <label>Устройство B<select v-model="edit.b" @change="changeEndpoint('b')"><option v-for="device in current?.nodes||[]" :key="device.id" :value="device.id">{{device.name}}</option></select></label></div>
-        <div class="dialog-columns"><label>Интерфейс A<select v-model.number="edit.aPort"><option v-for="p in editFirstPorts" :key="p" :value="p">{{portLabel(editA,p)}}</option></select></label>
-          <label>Интерфейс B<select v-model.number="edit.bPort"><option v-for="p in editSecondPorts" :key="p" :value="p">{{portLabel(editB,p)}}</option></select></label></div>
-        <div class="dialog-columns cable-style"><label>Цвет<input v-model="edit.color" type="color" /></label><label>Толщина<select v-model.number="edit.lineWidth"><option v-for="n in [1,2,3,4]" :key="n" :value="n">{{n}} px</option></select></label>
-          <label>Линия<select v-model="edit.lineStyle"><option value="solid">Сплошная</option><option value="dashed">Пунктир</option><option value="dotted">Точки</option></select></label></div>
+        <div class="dialog-columns"><label>Устройство A<UiSelect v-model="edit.a" @change="changeEndpoint('a')"><option v-for="device in current?.nodes||[]" :key="device.id" :value="device.id">{{device.name}}</option></UiSelect></label>
+          <label>Устройство B<UiSelect v-model="edit.b" @change="changeEndpoint('b')"><option v-for="device in current?.nodes||[]" :key="device.id" :value="device.id">{{device.name}}</option></UiSelect></label></div>
+        <div class="dialog-columns"><label>Интерфейс A<UiSelect v-model.number="edit.aPort"><option v-for="p in editFirstPorts" :key="p" :value="p">{{portLabel(editA,p)}}</option></UiSelect></label>
+          <label>Интерфейс B<UiSelect v-model.number="edit.bPort"><option v-for="p in editSecondPorts" :key="p" :value="p">{{portLabel(editB,p)}}</option></UiSelect></label></div>
+        <div class="dialog-columns cable-style"><label>Цвет<input v-model="edit.color" type="color" /></label><label>Толщина<UiSelect v-model.number="edit.lineWidth"><option v-for="n in [1,2,3,4]" :key="n" :value="n">{{n}} px</option></UiSelect></label>
+          <label>Линия<UiSelect v-model="edit.lineStyle"><option value="solid">Сплошная</option><option value="dashed">Пунктир</option><option value="dotted">Точки</option></UiSelect></label></div>
         <svg class="cable-preview" viewBox="0 0 340 38"><line x1="15" y1="19" x2="325" y2="19" :stroke="edit.color" :stroke-width="edit.lineWidth" :stroke-dasharray="edit.lineStyle==='dashed'?'8 5':edit.lineStyle==='dotted'?'2 5':undefined" stroke-linecap="round"/><circle cx="15" cy="19" r="3" fill="var(--surface)" stroke="var(--accent)"/><circle cx="325" cy="19" r="3" fill="var(--surface)" stroke="var(--accent)"/></svg>
         <div class="dialog-actions"><button type="button" class="cable-delete" @click="deleteLink"><Trash2 :size="14"/> Удалить</button><button type="button" @click="closeEditor">Отмена</button><button class="primary" :disabled="saving||edit.a===edit.b||!editFirstPorts.includes(edit.aPort)||!editSecondPorts.includes(edit.bPort)">Применить</button></div>
       </form>
