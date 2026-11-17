@@ -12,7 +12,11 @@ import (
 // Recovery is deliberately network-only; the old guest disk is never deleted.
 func recoveryFixture(t *testing.T) (*Engine,Lab,string) {
  t.Helper()
- root:=t.TempDir()
+ // Linux AF_UNIX paths are limited to 108 bytes; Go's nested t.TempDir()
+ // on CI is too long once runtime/<lab>/<node>/monitor.sock is appended.
+ root,err:=os.MkdirTemp(os.TempDir(),"nlr-")
+ if err!=nil{t.Fatal(err)}
+ t.Cleanup(func(){_ = os.RemoveAll(root)})
  e:=NewEngine(root)
  lab:=Lab{ID:newID(),Name:"Recovery test"}
  node:=Node{ID:newID(),Name:"Debian guest",Engine:"qemu",NICCount:2}
