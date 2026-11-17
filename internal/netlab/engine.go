@@ -80,6 +80,7 @@ type Instance struct {
 	vpcsTransport *vpcsTransport
 	links         []Link
 	qmp           string
+	vncWebPort    int // QEMU native VNC WebSocket, bound only to loopback
 	err           string
 	status        string
 	stopRequested bool // guarded by Engine.mu; an intentional Stop is not a VM crash
@@ -103,6 +104,28 @@ func (e *Engine) Status(lab, node string) (string, string) {
 		return i.status, i.err
 	}
 	return "stopped", ""
+}
+// GraphicsPort returns the local QEMU WebSocket port for a running VM only.
+func (e *Engine) GraphicsPort(lab,node string)(int,error){
+ e.mu.Lock();defer e.mu.Unlock()
+ ins:=e.instances[key(lab,node)]
+ if ins==nil||ins.engine!="qemu"||ins.status!="running"||ins.vncWebPort==0 {
+  return 0,errors.New("графическая консоль недоступна: запустите QEMU")
+ }
+ return ins.vncWebPort,nil
+}
+func reserveQEMUGraphicsPort()(int,int,error){
+ for display:=1;display<256;display++{
+  vnc:=5900+display;ws:=5700+display
+  l1,e1:=net.Listen("tcp",fmt.Sprintf("127.0.0.1:%d",vnc))
+  if e1!=nil{continue}
+  l2,e2:=net.Listen("tcp",fmt.Sprintf("127.0.0.1:%d",ws))
+  _=l1.Close()
+  if e2!=nil{continue}
+  _=l2.Close()
+  return display,ws,nil
+ }
+ return 0,0,errors.New("нет свободных VNC портов для QEMU")
 }
 func (e *Engine) ReadConsoleSince(lab, node string, offset int64) ([]byte, int64, bool, error) {
 	e.mu.Lock()
@@ -298,7 +321,9 @@ func (e *Engine) Start(l Lab, n Node, img Image) error {
 		accel = "kvm"
 		cpu = "host"
 	}
-	args := []string{"-name", "netlab-" + n.ID, "-machine", "pc,accel=" + accel, "-cpu", cpu, "-smp", strconv.Itoa(n.CPUs), "-m", strconv.Itoa(n.RAM), "-display", "none", "-monitor", "none", "-no-reboot", "-qmp", "unix:" + qmp + ",server=on,wait=off", "-serial", "unix:" + serial + ",server=on,wait=off", "-drive", "file=" + overlay + ",format=qcow2,if=" + n.DiskBus + ",cache=none"}
+	display,webPort,err:=reserveQEMUGraphicsPort()
+	if err!=nil {cleanup();return err}
+	args := []string{"-name", "netlab-" + n.ID, "-machine", "pc,accel=" + accel, "-cpu", cpu, "-smp", strconv.Itoa(n.CPUs), "-m", strconv.Itoa(n.RAM), "-display", "none", "-monitor", "none", "-no-reboot", "-qmp", "unix:" + qmp + ",server=on,wait=off", "-serial", "unix:" + serial + ",server=on,wait=off", "-drive", "file=" + overlay + ",format=qcow2,if=" + n.DiskBus + ",cache=none", "-vnc", fmt.Sprintf("127.0.0.1:%d,websocket=127.0.0.1:%d",display,webPort)}
 	if n.InstallISOID!="" {
 		installer:=filepath.Join(e.data,"media",n.InstallISOID+".iso")
 		if _,err:=os.Stat(installer); err!=nil {cleanup();return fmt.Errorf("ISO недоступен: %w",err)}
@@ -325,7 +350,7 @@ func (e *Engine) Start(l Lab, n Node, img Image) error {
 		return fmt.Errorf("запуск QEMU от netlab-vm: %w. Проверьте: sudo -u netlab-vm /usr/bin/qemu-system-x86_64 --version; sudo bash /opt/netlab/scripts/diagnose-qemu.sh; sudo journalctl -u netlab -n 80", err)
 	}
 	logFile.Close()
-	ins := &Instance{cmd: cmd, done: make(chan struct{}), taps: taps, engine: "qemu", qmp: qmp, console: &Console{}, status: "running"}
+	ins := &Instance{cmd: cmd, done: make(chan struct{}), taps: taps, engine: "qemu", qmp: qmp, vncWebPort:webPort, console: &Console{}, status: "running"}
 	e.instances[k] = ins
 	go e.readSerial(ins, serial)
 	go func() {
