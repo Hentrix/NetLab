@@ -17,7 +17,7 @@ case "$1" in
    if [ "${NETLAB_TEST_CREATE_FAIL:-}" = "1" ]; then exit 12; fi
    ;;
  info)
-   backing=$(cat "$3") || exit 1
+   backing=$(sed -n "1p" "$3") || exit 1
    printf '{"format":"qcow2","backing-filename":"%s"}\n' "$backing"
    ;;
  *) exit 2 ;;
