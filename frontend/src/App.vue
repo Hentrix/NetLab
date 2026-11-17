@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiSelect from '@/components/UiSelect.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { LayoutDashboard, HardDrive, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, GitBranch, Pencil, LogOut, X, ChevronDown } from '@lucide/vue'
+import { LayoutDashboard, HardDrive, Wrench, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, GitBranch, Pencil, LogOut, X, ChevronDown } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
 import { api, portLabel } from '@/api/client'
 import type { Device, Template, PortSpec } from '@/types'
@@ -10,9 +10,11 @@ import SystemOverview from '@/components/SystemOverview.vue'
 import { exportTopology } from '@/topology/snapshot'
 import TerminalDock from '@/components/TerminalDock.vue'
 import ImageLibrary from '@/components/ImageLibrary.vue'
+import ImageWorkshop from '@/components/ImageWorkshop.vue'
+import GraphicsConsole from '@/components/GraphicsConsole.vue'
 const store=useNetlabStore()
 const tokenEntry=ref(store.token)
-const page=ref<'labs'|'images'|'system'>('labs')
+const page=ref<'labs'|'images'|'workshop'|'system'>('labs')
 const theme=ref<'light' | 'dark'>(localStorage.getItem('netlab-theme')==='dark'?'dark':'light')
 const newLab=ref('');const createLabOpen=ref(false)
 const addOpen=ref(false)
@@ -44,6 +46,7 @@ const deviceDiskBus=ref('ide')
 const devicePortStyle=ref('eth')
 const deviceKinds=[{id:'router',name:'Маршрутизатор'},{id:'switch',name:'Коммутатор'},{id:'firewall',name:'Межсетевой экран'},{id:'server',name:'Сервер'},{id:'pc',name:'Компьютер'}]
 const defaultKindIcon:Record<string,string>={router:'Router.png',switch:'Layer 2 Switch.png',firewall:'Firewall.png',server:'Server.png',pc:'Desktop.png'}
+const graphicsDevice=ref<Device|null>(null)
 const templateID=ref('vpcs');const imageID=ref('');const deviceName=ref('');const nicCount=ref(4)
 const inFlight=ref(false)
 async function removeLab(){
@@ -175,7 +178,7 @@ const terminal=ref<InstanceType<typeof TerminalDock>|null>(null)
 const selectedTemplate=computed(()=>store.templates.find(t=>t.id===templateID.value))
 const profileSearch=ref('')
 const filteredTemplates=computed(()=>store.templates.filter(t=>
-  !profileSearch.value.trim()||`${t.name} ${t.kind||''} ${t.engine||''}`.toLocaleLowerCase().includes(profileSearch.value.trim().toLocaleLowerCase())
+  !profileSearch.value.trim()||`${t.name} ${t.kind||''} ${t.engine||''} ${t.family||''} ${t.version||''} ${t.category||''}`.toLocaleLowerCase().includes(profileSearch.value.trim().toLocaleLowerCase())
 ))
 function chooseTemplate(id:string){templateID.value=id;changeTemplate()}
 const filteredNodes=computed(()=>store.activeLab?.nodes.filter(n=>n.name.toLowerCase().includes(search.value.toLowerCase()))||[])
@@ -266,6 +269,15 @@ function openAddAt(position:{x:number;y:number}){
   openAdd()
   requestedNodePosition.value=position
 }
+function addFromPreparedTemplate(profileId:string){
+  const profile=store.templates.find(t=>t.id===profileId)
+  if(!profile||!profile.imageId){store.failure='Шаблон ОС не найден';return}
+  openAdd()
+  templateID.value=profile.id
+  changeTemplate()
+  imageID.value=profile.imageId
+  page.value='labs'
+}
 function addFromImage(image:string){
   if(!store.activeLab){store.failure='Сначала выберите лабораторию';return}
   const profile=store.templates.find(t=>t.engine==='qemu')
@@ -287,6 +299,8 @@ function changeTemplate(){
   deviceNicModel.value=t?.nicModel||'e1000'
   deviceDiskBus.value=t?.diskBus||'ide'
   devicePortStyle.value=t?.portStyle||'eth'
+  imageID.value=t?.imageId||store.images[0]?.id||''
+  if(t?.icon)deviceIcon.value=t.icon
 }
 async function addDevice(){
   const t:Template|undefined=selectedTemplate.value;if(!t||!store.activeLab)return
@@ -398,13 +412,14 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
       <div class="side-group-label">РАБОЧАЯ ОБЛАСТЬ</div>
       <button class="nav-link" :class="{active:page==='labs'}" @click="page='labs'"><LayoutDashboard :size="17"/> Лаборатории</button>
       <button class="nav-link" :class="{active:page==='images'}" @click="page='images'"><HardDrive :size="17"/> Библиотека образов</button>
+      <button class="nav-link" :class="{active:page==='workshop'}" @click="page='workshop'"><Wrench :size="17"/> Мастерская образов</button>
       <button class="nav-link" :class="{active:page==='system'}" @click="page='system'"><Activity :size="17"/> Система</button>
       <div class="side-group-label">ЛАБОРАТОРИИ <button title="Новая лаборатория" @click="createLabOpen=true"><Plus :size="15"/></button></div>
-      <div class="lab-list"><button v-for="lab in store.labs" :key="lab.id" :class="{active:store.labID===lab.id}" @click="store.labID=lab.id;page='labs';store.selectedID=null"><span class="lab-dot"/>{{lab.name}}</button><p v-if="!store.labs.length" class="secondary-text">Лабораторий пока нет</p></div>
+      <div class="lab-list"><button v-for="lab in store.labs.filter(item=>!item.workshop)" :key="lab.id" :class="{active:store.labID===lab.id}" @click="store.labID=lab.id;page='labs';store.selectedID=null"><span class="lab-dot"/>{{lab.name}}</button><p v-if="!store.labs.length" class="secondary-text">Лабораторий пока нет</p></div>
       <div class="side-bottom"><a href="/" title="Текущий стабильный интерфейс">Старый интерфейс</a><a href="https://github.com/Hentrix/NetLab" target="_blank" rel="noreferrer"><GitBranch :size="16"/></a></div>
     </aside>
     <main class="main-view">
-      <header class="top-bar"><span class="breadcrumbs">NETLAB / <strong>{{page==='labs'?(store.activeLab?.name||'Лаборатории'):page==='images'?'Образы':'Система'}}</strong></span>
+      <header class="top-bar"><span class="breadcrumbs">NETLAB / <strong>{{page==='labs'?(store.activeLab?.name||'Лаборатории'):page==='images'?'Образы':page==='workshop'?'Мастерская':'Система'}}</strong></span>
         <div class="top-actions"><span class="small-status"><i :class="{ok:store.live}"/>{{liveStatus}}</span><button title="Светлая / тёмная тема" @click="toggleTheme"><Sun v-if="dark" :size="17"/><Moon v-else :size="17"/>{{dark?'Светлая':'Тёмная'}}</button><button title="Выйти" @click="logout"><LogOut :size="17"/></button></div>
       </header>
       <template v-if="!store.token">
@@ -452,7 +467,8 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
                 <label>Интерфейсы</label><strong>{{store.selectedNode.engine==='vpcs'?1:(store.selectedNode.nicCount||16)}}</strong>
               </div>
               <p v-if="store.selectedNode.error" class="inspector-node-error">{{store.selectedNode.error}}</p>
-              <div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button :disabled="store.selectedNode.status!=='running'" @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
+              <div class="node-actions"><button v-if="store.selectedNode.status==='running'" @click="powerNode(store.selectedNode,'stop')"><Square :size="15"/> Остановить</button><button v-else @click="powerNode(store.selectedNode,'start')"><Play :size="15"/> Запустить</button><button :disabled="store.selectedNode.status!=='running'" @click="consoleOpen(store.selectedNode)"><TerminalSquare :size="15"/> Консоль</button>
+        <button v-if="store.selectedNode.engine!=='vpcs'" :disabled="store.selectedNode.status!=='running'" @click="graphicsDevice=store.selectedNode"><Monitor :size="15"/> Графический экран</button><button @click="rename(store.selectedNode)"><Pencil :size="15"/> Переименовать</button><button @click="openIconPicker(store.selectedNode)"><Router :size="15"/> Выбрать значок</button><button v-if="store.selectedNode.engine!=='vpcs'" @click="editHardware(store.selectedNode)"><HardDrive :size="15"/> Параметры QEMU</button><button class="danger" @click="deleteNode(store.selectedNode)"><Trash2 :size="15"/> Удалить</button></div></template>
             <template v-else><button class="port-edit-action" @click="editPorts(store.selectedNode)"><Pencil :size="14"/> Настроить имена и скорости</button><div class="port-rows"><div v-for="p in (store.selectedNode.nicCount||16)" :key="p"><span>{{portLabel(store.selectedNode,p-1)}}</span><small>{{selectedLinks.some(l=>(l.a===store.selectedID&&l.aPort===p-1)||(l.b===store.selectedID&&l.bPort===p-1))?'Подключено':'Свободен'}}</small></div></div><h4>Кабели</h4><div v-for="cable in selectedLinks" :key="cable.id" class="cable-row"><Cable :size="14"/>{{portLabel(store.activeLab?.nodes.find(n=>n.id===cable.a),cable.aPort)}} ↔ {{portLabel(store.activeLab?.nodes.find(n=>n.id===cable.b),cable.bPort)}}<button title="Отключить кабель" @click="removeCable(cable.id)"><Trash2 :size="14"/></button></div></template>
           </template><div v-else-if="!inspectorCollapsed" class="inspector-empty">Выберите устройство<br/>на топологии</div></aside>
         </div>
@@ -461,7 +477,8 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
           <span>{{store.metrics?.savedAt?'Последнее сохранение '+new Date(store.metrics.savedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'Последнее сохранение —'}}</span>
           <span>{{telemetryLastSuccess?'Телеметрия '+telemetryLastSuccess:'NetLab · Vue'}}</span></footer>
       </template>
-      <template v-else-if="page==='images'"><ImageLibrary @create-node="addFromImage"/></template>
+      <template v-else-if="page==='images'"><ImageLibrary @create-node="addFromImage" @create-template="addFromPreparedTemplate"/></template>
+      <template v-else-if="page==='workshop'"><ImageWorkshop /></template>
       <template v-else><SystemOverview /></template>
       <div v-if="store.failure" role="alert" class="error-toast" @click="store.failure=''">{{store.failure}} <X :size="16"/></div>
     </main>
@@ -487,6 +504,7 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
       </template>
     </div>
     <TerminalDock ref="terminal" :theme="theme" />
+    <GraphicsConsole v-if="graphicsDevice&&store.labID" :lab-id="store.labID" :node-id="graphicsDevice.id" :name="graphicsDevice.name" @close="graphicsDevice=null"/>
     <div v-if="deviceLogOpen" class="dialog-overlay" @click.self="deviceLogOpen=false">
       <div class="dialog-card device-log-dialog" role="dialog" :aria-label="'Журнал '+deviceLogName">
         <h2>Журнал · {{deviceLogName}}</h2>
