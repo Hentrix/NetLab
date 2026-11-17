@@ -178,11 +178,13 @@ const selectedOnCanvas=ref<string[]>([])
 // The inspector/sidebar uses store.selectedID, while Vue Flow owns a separate
 // selection-change event. Both must produce the same persistent visual outline.
 function isDeviceSelected(id:string){
-  return store.selectedID===id||selectedOnCanvas.value.includes(id)
+  return store.selectedDeviceIDs.includes(id)||selectedOnCanvas.value.includes(id)
 }
 const selectedDevices=computed(()=>{
-  const ids=new Set(selectedOnCanvas.value.filter(id=>current.value?.nodes.some(device=>device.id===id)))
-  if(store.selectedID&&current.value?.nodes.some(device=>device.id===store.selectedID))ids.add(store.selectedID)
+  const ids=new Set(store.selectedDeviceIDs)
+  for(const id of selectedOnCanvas.value){
+    if(current.value?.nodes.some(device=>device.id===id))ids.add(id)
+  }
   return [...ids]
 })
 const movingGroup=ref(false)
@@ -193,16 +195,25 @@ let selectingWithMouse=false
 // Only accept them while the user is actively drawing a selection rectangle.
 function selectionChanged(event:{nodes:Array<{id:string}>}){
   if(!selectingArea.value||panMode.value||cableMode.value)return
-  selectedOnCanvas.value=event.nodes.map(node=>node.id)
+  const selected=event.nodes.map(node=>node.id)
+  selectedOnCanvas.value=selected
   const primary=event.nodes.find(node=>current.value?.nodes.some(device=>device.id===node.id))
   selectingWithMouse=true
-  store.selectedID=primary?.id||null
+  store.selectDeviceGroup(selected.filter(id=>current.value?.nodes.some(device=>device.id===id)),primary?.id||null)
   selectingWithMouse=false
 }
-// A click in the sidebar or inspector is a new single selection, not an
-// extension of whatever was selected previously on the topology.
+// Keep the sidebar and canvas in sync for both single and group selection.
+watch(()=>store.selectedDeviceIDs,ids=>{
+  if(!selectingWithMouse)selectedOnCanvas.value=[...ids]
+},{flush:'sync'})
+// Other inspector actions can still set the primary ID directly.
 watch(()=>store.selectedID,id=>{
-  if(!selectingWithMouse)selectedOnCanvas.value=id?[id]:[]
+  if(selectingWithMouse)return
+  if(id===null){store.selectedDeviceIDs=[];selectedOnCanvas.value=[]}
+  else if(!store.selectedDeviceIDs.includes(id)){
+    store.selectedDeviceIDs=[id]
+    selectedOnCanvas.value=[id]
+  }
 },{flush:'sync'})
 function bulkSelectedDevices(){
   if(selectedDevices.value.length)emit('bulk', [...selectedDevices.value])
@@ -552,7 +563,7 @@ const edges = computed(() => current.value?.links.filter(link=>geometry.value.ha
 // After adding/removing a cable, Vue Flow must remeasure DOM handles.
 const internalsKey = computed(() => `${store.labID}:${current.value?.nodes.map(n=>`${n.id}:${n.x},${n.y}`).join('|')}:${current.value?.links.map(l=>`${l.id}:${l.a}:${l.b}`).join('|')}`)
 watch(internalsKey,async()=>{await nextTick();updateNodeInternals((current.value?.nodes || []).map(n=>n.id))},{flush:'post'})
-watch(()=>store.labID,async()=>{clearHover();firstCableNode.value=null;selectedOnCanvas.value=[];dismissContextMenu();closeDeviceContext();closeCanvasContext();resizeCancel();await nextTick();void fitView({padding:.22,duration:250})})
+watch(()=>store.labID,async()=>{clearHover();firstCableNode.value=null;selectedOnCanvas.value=[];store.selectDeviceGroup([],null);dismissContextMenu();closeDeviceContext();closeCanvasContext();resizeCancel();await nextTick();void fitView({padding:.22,duration:250})})
 const startName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.a)?.name || '')
 const endName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.b)?.name || '')
 const firstPorts = computed(() => availablePorts(current.value?.nodes||[],current.value?.links||[],pending.value?.a||''))
@@ -617,24 +628,22 @@ function picked(event:NodeMouseEvent) {
   const additive=event.event.ctrlKey||event.event.metaKey
   // The input must include the inspector's currently selected device as well
   // as the canvas selection; otherwise the second Ctrl-click loses the first.
-  const before=[...selectedOnCanvas.value]
-  if(store.selectedID&&!before.includes(store.selectedID))before.push(store.selectedID)
+  const before=[...new Set([...selectedOnCanvas.value,...store.selectedDeviceIDs])]
   const selected=nextNodeSelection(before,id,additive)
   selectingWithMouse=true
   selectedOnCanvas.value=selected
-  if(id.startsWith('annotation:')){
-    if(!additive)store.selectedID=null
-  }else{
-    store.selectedID=selected.includes(id)?id:
-      (selected.find(nodeId=>current.value?.nodes.some(node=>node.id===nodeId))||null)
-  }
+  const selectedDevices=selected.filter(nodeId=>current.value?.nodes.some(node=>node.id===nodeId))
+  const primary=id.startsWith('annotation:')
+    ? (additive?store.selectedID:null)
+    : (selectedDevices.includes(id)?id:selectedDevices.at(-1)||null)
+  store.selectDeviceGroup(selectedDevices,primary)
   selectingWithMouse=false
 }
 function canvasClick(){
   dismissContextMenu();closeDeviceContext();closeCanvasContext()
   if(!panMode.value&&!cableMode.value){
     selectedOnCanvas.value=[]
-    store.selectedID=null
+    store.selectDeviceGroup([],null)
   }
 }
 function doubleClick(event:{node:{id:string}}){

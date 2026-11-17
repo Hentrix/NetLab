@@ -13,6 +13,19 @@ export const useNetlabStore = defineStore('netlab', () => {
   const checking = ref(false)
   const labID = ref<string | null>(null)
   const selectedID = ref<string | null>(null)
+  // IDs of all devices selected in the active lab; selectedID is the inspector's primary node.
+  const selectedDeviceIDs = ref<string[]>([])
+  function selectDeviceGroup(ids: string[], primary?: string | null) {
+    const allowed = new Set(activeLab.value?.nodes.map(node=>node.id)||[])
+    selectedDeviceIDs.value=[...new Set(ids)].filter(id=>allowed.has(id))
+    const chosen=primary===undefined?selectedDeviceIDs.value.at(-1)||null:primary
+    selectedID.value=chosen&&allowed.has(chosen)?chosen:null
+  }
+  function clickDeviceInSidebar(id: string, additive: boolean) {
+    const before=selectedDeviceIDs.value.length?selectedDeviceIDs.value:selectedID.value?[selectedID.value]:[]
+    const next=additive?(before.includes(id)?before.filter(value=>value!==id):[...before,id]):[id]
+    selectDeviceGroup(next,next.includes(id)?id:next.at(-1)||null)
+  }
   const busy = ref(false)
   const failure = ref('')
   const live = ref(false)
@@ -195,7 +208,7 @@ export const useNetlabStore = defineStore('netlab', () => {
   async function labPower(operation: 'start' | 'stop') {
     await action(()=>api<unknown>(token.value,`labs/${current().id}/${operation}`,{method:'POST'})); await refresh()
   }
-  return {token,labs,images,templates,system,metrics,checking,labID,selectedID,busy,failure,live,activeLab,selectedNode,
+  return {token,labs,images,templates,system,metrics,checking,labID,selectedID,selectedDeviceIDs,selectDeviceGroup,clickDeviceInSidebar,busy,failure,live,activeLab,selectedNode,
     authenticate,logout,refresh,refreshSystem,bootstrap,createLab,deleteLab,uploadImage,deleteImage,refreshImages,renameLab,createAnnotation,updateAnnotation,removeAnnotation,addNode,addNodesBatch,moveNode,nodePower,renameNode,
     removeNode,updateNode,configureQemuNode,bulkNodes,moveTopologyItems,connect,disconnect,updateCable,labPower}
 })
