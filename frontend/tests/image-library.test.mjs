@@ -42,3 +42,22 @@ test('icon picker searches every result in paginated categories',()=>{
   assert.match(app,/allIconMatches\.value\.slice\(0,iconLimit\.value\)/)
   assert.doesNotMatch(app,/\.slice\(0,120\)/)
 })
+
+test('image library filters ISO, templates, drafts and categories before sorting',()=>{
+ assert.match(images,/const typeFilter=ref/)
+ assert.match(images,/const categoryFilter=ref/)
+ assert.match(images,/imageType\(image\)===typeFilter\.value/)
+ assert.match(images,/image\.category===categoryFilter\.value/)
+ assert.match(images,/aria-label="Тип образа"/)
+ assert.match(images,/aria-label="Категория образа"/)
+})
+
+test('metadata editor saves category, family and version through backend and reloads templates',()=>{
+ assert.match(images,/function beginEdit\(image:ImageRecord\)/)
+ assert.match(images,/editingID===image\.id/)
+ assert.match(images,/@submit\.prevent="saveMetadata\(image\)"/)
+ assert.match(images,/store\.updateImageMetadata\(image\.id,draft\.name,draft\.category,draft\.family,draft\.version\)/)
+ assert.match(images,/if\(image\.published&&\(!draft\.family\|\|!draft\.version\)\)/)
+ assert.match(store,/async function updateImageMetadata\(/)
+ assert.match(store,/await Promise\.all\(\[refreshImages\(\),refreshTemplates\(\)\]\)/)
+})
