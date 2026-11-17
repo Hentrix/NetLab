@@ -1,0 +1,39 @@
+name: Debian installation scripts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/debian-scripts.yml'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/debian-scripts.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Bash syntax and preflight CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate installer and diagnostics syntax
+        run: |
+          bash -n scripts/check-host.sh
+          bash -n scripts/diagnose-qemu.sh
+          bash -n scripts/install-debian13.sh
+      - name: Check read-only help mode
+        run: |
+          bash scripts/check-host.sh --help | grep -q -- '--strict-kvm'
+          bash scripts/check-host.sh --help | grep -q 'без запуска VM'
+      - name: Reject unknown arguments safely
+        run: |
+          set +e
+          bash scripts/check-host.sh --unknown > /tmp/netlab-invalid-args.log 2>&1
+          status=$?
+          set -e
+          test "$status" -eq 2
+          grep -q 'Неизвестный аргумент' /tmp/netlab-invalid-args.log
