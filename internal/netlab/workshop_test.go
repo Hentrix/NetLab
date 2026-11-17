@@ -92,3 +92,36 @@ func TestPublishRejectsActiveVMAndMissingOverlay(t *testing.T){
  // If qemu-img is installed, absent overlay is 409. Otherwise 503 is expected.
  if status!=409&&status!=503{t.Fatalf("unexpected response %d",status)}
 }
+
+func TestPublishOnlyStoppedWorkshopDraft(t *testing.T) {
+ binDir:=t.TempDir()
+ bin:=filepath.Join(binDir,"qemu-img")
+ if err:=os.WriteFile(bin,[]byte("#!/bin/sh\nexit 0\n"),0755);err!=nil{t.Fatal(err)}
+ t.Setenv("PATH",binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+ s:=newTestServer(t)
+ regular:=Image{ID:newID(),Name:"Existing VM",Kind:"disk",Format:"qcow2"}
+ draft:=Image{ID:newID(),Name:"Preparation",Kind:"disk",Format:"qcow2",Draft:true}
+ lab:=Lab{ID:newID(),Name:"Lab",Nodes:[]Node{
+  {ID:newID(),Name:"Ordinary",Engine:"qemu",ImageID:regular.ID},
+  {ID:newID(),Name:"Workshop",Engine:"qemu",ImageID:draft.ID},
+ },Links:[]Link{}}
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,regular,draft)
+ s.store.State.Labs=append(s.store.State.Labs,lab)
+ s.store.mu.Unlock()
+ payload:=func(nodeID string)[]byte{
+  return []byte(`{"labId":"`+lab.ID+`","nodeId":"`+nodeID+`","name":"Template","category":"server","family":"Linux","version":"13"}`)
+ }
+ status,body:=httpCall(t,s,"POST","/api/workshop/publish",payload(lab.Nodes[0].ID),true)
+ if status!=409||!strings.Contains(string(body),"черновым"){t.Fatalf("ordinary VM accepted: %d %s",status,body)}
+ s.engine.mu.Lock()
+ s.engine.instances[key(lab.ID,lab.Nodes[1].ID)]=&Instance{status:"running"}
+ s.engine.mu.Unlock()
+ status,body=httpCall(t,s,"POST","/api/workshop/publish",payload(lab.Nodes[1].ID),true)
+ if status!=409||!strings.Contains(string(body),"остановки"){t.Fatalf("running draft accepted: %d %s",status,body)}
+ s.engine.mu.Lock()
+ s.engine.instances[key(lab.ID,lab.Nodes[1].ID)].status="error"
+ s.engine.mu.Unlock()
+ status,body=httpCall(t,s,"POST","/api/workshop/publish",payload(lab.Nodes[1].ID),true)
+ if status!=409{t.Fatalf("failed VM accepted: %d %s",status,body)}
+}

@@ -37,6 +37,7 @@ const families=computed(()=>{
  return [...groups.values()].sort((a,b)=>a.category.localeCompare(b.category)||a.family.localeCompare(b.family))
 })
 const selectedDraft=computed(()=>draftNodes.value.find(({lab,node})=>lab.id+':'+node.id===publishNodeID.value))
+const publishReady=computed(()=>!!selectedDraft.value&&selectedDraft.value.node.status==='stopped')
 async function uploadISO(){
  if(!isoFile.value||uploadBusy.value)return
  const selected=isoFile.value
@@ -73,10 +74,11 @@ async function createPreparation(){
  finally{preparing.value=false}
 }
 async function publish(){
- if(!selectedDraft.value||publishing.value||!name.value.trim())return
+ if(!publishReady.value||publishing.value||!name.value.trim()||!family.value.trim()||!version.value.trim())return
  publishing.value=true;status.value=''
  try{
   const item=selectedDraft.value
+  if(!item)return
   const result=await store.publishWorkshop(item.lab.id,item.node.id,
     name.value.trim(),category.value,family.value.trim(),version.value.trim())
   status.value='Шаблон «'+result.name+'» опубликован. Теперь он доступен в каталоге устройств.'
@@ -135,7 +137,8 @@ async function refresh(){
           <UiSelect v-model="publishNodeID"><option value="">Выберите устройство</option><option v-for="item in draftNodes" :key="item.lab.id+':'+item.node.id" :value="item.lab.id+':'+item.node.id">{{item.lab.name}} / {{item.node.name}}</option></UiSelect>
         </label>
         <p>После завершения установки выключите гостевую ОС. Сервер объединит рабочий диск с базовым в отдельный QCOW2 и добавит версию в каталог. Исходная VM останется доступна.</p>
-        <button class="primary" type="button" :disabled="!selectedDraft||publishing||!name.trim()||!family.trim()||!version.trim()" @click="publish">
+        <small v-if="selectedDraft && !publishReady" role="status">VM ещё не остановлена ({{selectedDraft.node.status||'состояние неизвестно'}}). Выключите её и нажмите «Обновить».</small>
+        <button class="primary" type="button" :disabled="!publishReady||publishing||!name.trim()||!family.trim()||!version.trim()" @click="publish">
           <PackageCheck :size="16"/> {{publishing?'Публикация…':'Опубликовать образ'}}
         </button>
       </article>

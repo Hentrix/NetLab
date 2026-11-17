@@ -102,9 +102,17 @@ func (s *Server) workshopAPI(w http.ResponseWriter,r *http.Request,p []string){
  lab:=s.store.findLab(req.LabID)
  if lab==nil{fail(w,404,"лаборатория не найдена");return}
  node:=findNode(lab,req.NodeID)
- if node==nil || node.Engine=="vpcs"{fail(w,404,"QEMU узел не найден");return}
+ if node==nil || node.Engine!="qemu"{fail(w,404,"QEMU узел не найден");return}
+ // Only workshop preparation disks may become catalog templates.
+ // Ordinary lab nodes must never be published accidentally.
+ base:=findImage(&s.store.State,node.ImageID)
+ if base==nil || base.isISO() || !base.Draft {
+  fail(w,409,"можно публиковать только подготовительную VM с черновым диском");return
+ }
  status,_:=s.engine.Status(req.LabID,req.NodeID)
- if status=="running"{fail(w,409,"выключите VM из гостевой ОС и остановите устройство перед публикацией");return}
+ if status!="stopped" {
+  fail(w,409,"публикация доступна только после полной остановки VM");return
+ }
  overlay:=filepath.Join(s.data,"runtime",req.LabID,req.NodeID,"disk.qcow2")
  if _,err:=os.Stat(overlay);err!=nil{fail(w,409,"диск VM не найден: сначала запустите и установите ОС");return}
  id:=newID()
