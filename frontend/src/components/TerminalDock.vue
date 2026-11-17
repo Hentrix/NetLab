@@ -230,7 +230,7 @@ watch(minimized,value=>{if(!value&&current.value)void focusSession(current.value
 watch(maximized,async()=>{await nextTick();fitActive()})
 onBeforeUnmount(()=>{closeAll();resize?.disconnect()})
 watch(dock,element=>{resize?.disconnect();if(element&&typeof ResizeObserver!=='undefined'){resize=new ResizeObserver(()=>fitActive());resize.observe(element)}})
-defineExpose({open})
+defineExpose({open,closeAll})
 </script>
 <template>
   <div v-if="visible" ref="dock" class="term-dock" :class="{'is-minimized':minimized,'is-maximized':maximized}" :style="(!maximized&&left!==null)?{left:`${left}px`,top:`${top??20}px`,right:'auto',bottom:'auto'}:{}">
