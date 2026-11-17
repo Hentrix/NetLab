@@ -167,3 +167,22 @@ func TestDeleteImageRollsBackOnStateSaveFailure(t *testing.T) {
  if _,err:=os.Stat(path);!os.IsNotExist(err){t.Fatalf("deleted file still present: %v",err)}
  if _,err:=os.Stat(path+".deleting");!os.IsNotExist(err){t.Fatalf("staged file still present: %v",err)}
 }
+
+func TestRecoverInterruptedImageDeletionOnStartup(t *testing.T) {
+ s:=newTestServer(t)
+ id:=newID()
+ image:=Image{ID:id,Name:"Recoverable",Format:"qcow2",Kind:"disk"}
+ path:=filepath.Join(s.data,"images",id+".qcow2")
+ s.store.mu.Lock()
+ s.store.State.Images=append(s.store.State.Images,image)
+ if err:=s.store.save();err!=nil{t.Fatal(err)}
+ s.store.mu.Unlock()
+ if err:=os.WriteFile(path,[]byte("recoverable disk"),0600);err!=nil{t.Fatal(err)}
+ if err:=os.Rename(path,path+".deleting");err!=nil{t.Fatal(err)}
+ recovered,err:=NewServer(s.data,s.web,testToken)
+ if err!=nil{t.Fatal(err)}
+ if recovered==nil{t.Fatal("missing recovered server")}
+ data,err:=os.ReadFile(path)
+ if err!=nil||string(data)!="recoverable disk"{t.Fatalf("image was not recovered: %q %v",data,err)}
+ if _,err:=os.Stat(path+".deleting");!os.IsNotExist(err){t.Fatalf("tombstone not cleared: %v",err)}
+}
