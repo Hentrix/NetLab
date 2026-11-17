@@ -49,3 +49,13 @@ test('published versions sort numerically within their families',()=>{
  assert.match(workshop,/group\.images\.sort\(/)
  assert.match(workshop,/numeric:true/)
 })
+
+
+test('selecting an existing preparation restores its publication metadata',()=>{
+ assert.match(workshop,/watch\(publishNodeID,id=>/)
+ assert.match(workshop,/const disk=store\.images\.find\(image=>image\.id===item\.node\.imageId\)/)
+ assert.match(workshop,/name\.value=item\.node\.name/)
+ assert.match(workshop,/if\(disk\?\.family\)family\.value=disk\.family/)
+ assert.match(workshop,/if\(disk\?\.version\)version\.value=disk\.version/)
+ assert.match(workshop,/if\(disk\?\.category\)category\.value=disk\.category/)
+})
