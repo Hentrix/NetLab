@@ -57,6 +57,19 @@ systemctl enable --now openvswitch-switch
 systemctl enable netlab
 systemctl restart netlab
 
+# Check the deployed service using the same user as actual QEMU/VPCS guests.
+# A warning does not roll back an otherwise successful installation.
+echo ''
+echo 'Проверка работоспособности NetLab после установки...'
+for attempt in 1 2 3 4 5; do
+  if curl -fsS --max-time 2 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then break; fi
+  sleep 1
+done
+if ! bash /opt/netlab/scripts/check-host.sh; then
+  echo 'ПРЕДУПРЕЖДЕНИЕ: preflight обнаружил неполадки; подробности выше.' >&2
+  echo 'Повторная проверка: sudo bash /opt/netlab/scripts/check-host.sh' >&2
+fi
+
 echo ''
 echo 'NetLab установлен.'
 echo 'Адрес: http://<IP_сервера>:8080 (по умолчанию 0.0.0.0:8080)'
@@ -64,4 +77,5 @@ echo 'ОГРАНИЧЬТЕ порт 8080 межсетевым экраном. Д
 echo 'Токен: sudo cat /etc/netlab/netlab.env'
 echo 'С другого компьютера: ssh -L 8080:127.0.0.1:8080 <user>@<server>'
 echo 'Состояние: sudo systemctl status netlab'
+echo 'Проверка готовности: sudo bash /opt/netlab/scripts/check-host.sh'
 echo 'Диагностика QEMU: sudo bash /opt/netlab/scripts/diagnose-qemu.sh'
