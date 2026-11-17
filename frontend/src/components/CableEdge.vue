@@ -26,7 +26,7 @@ function context(event:MouseEvent){event.preventDefault();event.stopPropagation(
 function hover(event:MouseEvent,active:boolean){props.data?.onHover?.(props.id,active,event)}
 </script>
 <template>
-  <BaseEdge :id="id" :path="path" :style="{ stroke: data?.emphasized?'var(--accent)':stroke, strokeWidth: data?.emphasized?Math.max(4,width+2):data?.related?width+1:width, strokeDasharray: dash, opacity:data?.emphasized?1:data?.related?.9:1, filter:data?.emphasized?'drop-shadow(0 0 4px var(--accent))':undefined }" />
+  <BaseEdge :id="id" :path="path" :style="{ stroke: data?.emphasized?'var(--accent)':stroke, strokeWidth: data?.emphasized?Math.max(4,width+2):data?.related?width+1:width, strokeDasharray: dash, opacity:data?.emphasized ? 1 : data?.related ? 0.9 : 1, filter:data?.emphasized?'drop-shadow(0 0 4px var(--accent))':undefined }" />
   <path class="cable-interaction" :d="path" fill="none" stroke="transparent" stroke-width="20"
     @mouseenter="hover($event,true)" @mousemove="hover($event,true)" @mouseleave="hover($event,false)"
     @contextmenu="context" @dblclick="edit" />
