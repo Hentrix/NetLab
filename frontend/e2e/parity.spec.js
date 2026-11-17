@@ -104,8 +104,10 @@ test('switching between two VPCS console tabs preserves keyboard input focus',as
   await page.locator('.node-actions button').filter({hasText:'Консоль'}).click()
   await expect(page.locator('.term-tab')).toHaveCount(1)
   await page.keyboard.type('abc')
-  await page.locator('.device-entry').filter({hasText:'PC2'}).click()
-  await page.locator('.node-actions button').filter({hasText:'Консоль'}).click()
+  // The floating terminal can cover the inspector: open PC2 from its
+  // legacy-equivalent context menu in the left explorer instead.
+  await page.locator('.device-entry').filter({hasText:'PC2'}).click({button:'right'})
+  await page.locator('.sidebar-device-menu').getByRole('menuitem',{name:/Открыть консоль/}).click()
   await expect(page.locator('.term-tab')).toHaveCount(2)
   await page.keyboard.type('xyz')
   await page.locator('.term-tab').first().locator('button').first().click()
