@@ -101,13 +101,13 @@ func (s *Server) createWorkshopPreparation(w http.ResponseWriter,r *http.Request
  kind:="server"
  switch req.Category {case "desktop":kind="pc";case "router","switch","firewall":kind=req.Category}
  diskID:=newID()
- img:=Image{ID:diskID,Name:"Заготовка · "+strings.TrimSpace(req.Name),Format:"qcow2",Kind:"disk",Draft:true,
+ img:=Image{ID:diskID,Name:strings.TrimSpace(req.Name),Format:"qcow2",Kind:"disk",Draft:true,
   Category:req.Category,Family:strings.TrimSpace(req.Family),Version:strings.TrimSpace(req.Version),CreatedAt:time.Now()}
  node:=Node{ID:newID(),Name:strings.TrimSpace(req.Name),Engine:"qemu",Kind:kind,ImageID:diskID,
   InstallISOID:req.ISOID,BootOrder:"cdrom",RAM:req.RAM,CPUs:req.CPUs,NICModel:req.NICModel,
   NICCount:2,DiskBus:"ide",PortStyle:"eth",X:250,Y:180,Status:"stopped"}
  if err:=validateNode(node);err!=nil{fail(w,400,err.Error());return}
- lab:=Lab{ID:newID(),Name:"Подготовка · "+strings.TrimSpace(req.Family)+" "+strings.TrimSpace(req.Version),
+ lab:=Lab{ID:newID(),Name:strings.TrimSpace(req.Name),
   CreatedAt:time.Now(),Nodes:[]Node{node},Links:[]Link{},Annotations:[]Annotation{}}
  tmp:=filepath.Join(s.data,"images",diskID+".creating")
  final:=filepath.Join(s.data,"images",diskID+".qcow2")
