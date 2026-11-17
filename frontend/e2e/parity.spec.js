@@ -16,6 +16,7 @@ async function mockNetLab(page) {
   await page.addInitScript(()=>sessionStorage.setItem('netlabToken','test-local-token'))
   await page.route('**/api/**',async route=>{
     const request=route.request(),url=new URL(request.url()),path=url.pathname
+    if(!path.startsWith('/api/'))return route.continue()
     let body=null
     const method=request.method()
     if(method==='POST'&&path.endsWith('/console')){
