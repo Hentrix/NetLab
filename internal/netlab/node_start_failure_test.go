@@ -46,3 +46,12 @@ func TestNodeRunningStateDoesNotShowStaleFailure(t *testing.T){
  status,message:=e.Status(lab,node)
  if status!="running"||message!=""{t.Fatalf("running device has stale failure: %q %q",status,message)}
 }
+
+func TestLabPrevalidationReportsFailureOnNode(t *testing.T) {
+ s:=newTestServer(t)
+ n:=Node{ID:newID(),Name:"Missing ISO",Engine:"qemu",ImageID:newID()}
+ lab:=Lab{ID:newID(),Name:"Invalid lab",Nodes:[]Node{n}}
+ if err:=s.validateLabStart(lab);err==nil{t.Fatal("missing disk accepted")}
+ _,detail:=s.engine.Status(lab.ID,n.ID)
+ if !strings.Contains(detail,"образ"){t.Fatalf("preflight error not attached to node: %q",detail)}
+}
