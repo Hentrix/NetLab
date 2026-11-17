@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiSelect from '@/components/UiSelect.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { LayoutDashboard, HardDrive, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, GitBranch, Pencil, LogOut, X, ChevronDown } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
@@ -372,14 +373,14 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
         <p>Изменения применяются при следующем запуске. Для сохранения необходимо остановить все устройства лаборатории.</p>
         <p v-if="hardwareLocked" class="hardware-warning">Остановите лабораторию перед сохранением параметров.</p>
         <label>Название<input v-model.trim="hardwareDraft.name" maxlength="80" required/></label>
-        <label>Тип устройства<select v-model="hardwareDraft.kind"><option v-for="kind in deviceKinds" :key="kind.id" :value="kind.id">{{kind.name}}</option></select></label>
-        <label>Обозначение интерфейсов<select v-model="hardwareDraft.portStyle"><option v-for="style in portStyles" :key="style.value" :value="style.value">{{style.name}}</option></select></label>
-        <label>Образ диска<select v-model="hardwareDraft.imageId" required><option v-for="image in store.images" :key="image.id" :value="image.id">{{image.name}}</option></select></label>
+        <label>Тип устройства<UiSelect v-model="hardwareDraft.kind"><option v-for="kind in deviceKinds" :key="kind.id" :value="kind.id">{{kind.name}}</option></UiSelect></label>
+        <label>Обозначение интерфейсов<UiSelect v-model="hardwareDraft.portStyle"><option v-for="style in portStyles" :key="style.value" :value="style.value">{{style.name}}</option></UiSelect></label>
+        <label>Образ диска<UiSelect v-model="hardwareDraft.imageId" required><option v-for="image in store.images" :key="image.id" :value="image.id">{{image.name}}</option></UiSelect></label>
         <div class="dialog-columns"><label>Оперативная память, МиБ<input v-model.number="hardwareDraft.ram" type="number" min="128" max="131072" required/></label>
         <label>vCPU<input v-model.number="hardwareDraft.cpus" type="number" min="1" max="64" required/></label></div>
         <div class="dialog-columns"><label>Ethernet-порты<input v-model.number="hardwareDraft.nicCount" type="number" min="1" max="16" required/></label>
-        <label>Сетевая карта<select v-model="hardwareDraft.nicModel"><option value="virtio-net-pci">VirtIO</option><option value="e1000">Intel E1000</option><option value="rtl8139">RTL8139</option></select></label></div>
-        <label>Дисковая шина<select v-model="hardwareDraft.diskBus"><option value="virtio">VirtIO</option><option value="ide">IDE</option><option value="scsi">SCSI</option></select></label>
+        <label>Сетевая карта<UiSelect v-model="hardwareDraft.nicModel"><option value="virtio-net-pci">VirtIO</option><option value="e1000">Intel E1000</option><option value="rtl8139">RTL8139</option></UiSelect></label></div>
+        <label>Дисковая шина<UiSelect v-model="hardwareDraft.diskBus"><option value="virtio">VirtIO</option><option value="ide">IDE</option><option value="scsi">SCSI</option></UiSelect></label>
         <p>Изменение образа после создания overlay-диска запрещено backend. При уменьшении числа портов сначала удалите кабели, подключённые к исключаемым интерфейсам.</p>
         <div class="dialog-actions"><button type="button" :disabled="hardwareSaving" @click="hardwareOpen=false">Отмена</button><button class="primary" :disabled="hardwareSaving||hardwareLocked">Сохранить</button></div>
       </form>
@@ -416,12 +417,12 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
       <form class="dialog-card port-editor-dialog" @submit.prevent="savePorts">
         <h2>Настройка интерфейсов</h2>
         <p>Имена и номинальные скорости — подписи топологии, они не меняют скорость сетевой карты QEMU.</p>
-        <label>Стиль портов<select v-model="portStyleDraft"><option v-for="style in portStyles" :key="style.value" :value="style.value">{{style.name}}</option></select></label>
+        <label>Стиль портов<UiSelect v-model="portStyleDraft"><option v-for="style in portStyles" :key="style.value" :value="style.value">{{style.name}}</option></UiSelect></label>
         <div class="port-editor-grid">
           <div v-for="(port,i) in portDraft" :key="i" class="port-editor-row">
             <strong>№ {{i+1}}</strong>
             <label>Имя<input v-model.trim="port.name" maxlength="32" :placeholder="'Имя по стилю '+portStyleDraft"/></label>
-            <label>Скорость<select v-model.number="port.speedMbps"><option v-for="speed in speeds" :key="speed" :value="speed">{{speed===0?'Не задана':speed+' Мбит/с'}}</option></select></label>
+            <label>Скорость<UiSelect v-model.number="port.speedMbps"><option v-for="speed in speeds" :key="speed" :value="speed">{{speed===0?'Не задана':speed+' Мбит/с'}}</option></UiSelect></label>
           </div>
         </div>
         <div class="dialog-actions"><button type="button" @click="portEditorOpen=false">Отмена</button><button class="primary" :disabled="portSaving">Сохранить</button></div>
@@ -442,17 +443,17 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval);if(telemetryInterval)cl
         </div>
         <label>Название<input v-model="deviceName" required maxlength="80"/></label>
         <label>Количество<input v-model.number="batchCount" type="number" min="1" max="32" required/></label>
-        <label v-if="selectedTemplate?.engine!=='vpcs'">Тип на схеме<select v-model="deviceKind" @change="deviceIcon=defaultKindIcon[deviceKind]||'Router.png'"><option v-for="kind in deviceKinds" :key="kind.id" :value="kind.id">{{kind.name}}</option></select></label>
+        <label v-if="selectedTemplate?.engine!=='vpcs'">Тип на схеме<UiSelect v-model="deviceKind" @change="deviceIcon=defaultKindIcon[deviceKind]||'Router.png'"><option v-for="kind in deviceKinds" :key="kind.id" :value="kind.id">{{kind.name}}</option></UiSelect></label>
         <label>Значок на схеме<button type="button" class="device-icon-choice" @click="openCreateIconPicker">
           <img v-if="deviceIcon" :src="`/icons/${encodeURIComponent(deviceIcon)}`" alt=""/>{{deviceIcon||'Выбрать значок'}} · Изменить
         </button></label>
-        <label>Обозначение интерфейсов<select v-model="devicePortStyle"><option v-for="style in portStyles" :key="style.value" :value="style.value">{{style.name}}</option></select></label>
+        <label>Обозначение интерфейсов<UiSelect v-model="devicePortStyle"><option v-for="style in portStyles" :key="style.value" :value="style.value">{{style.name}}</option></UiSelect></label>
         <template v-if="selectedTemplate?.engine!=='vpcs'">
-          <label>Образ<select v-model="imageID" required><option v-for="image in store.images" :key="image.id" :value="image.id">{{image.name}}</option></select></label>
+          <label>Образ<UiSelect v-model="imageID" required><option v-for="image in store.images" :key="image.id" :value="image.id">{{image.name}}</option></UiSelect></label>
           <div class="dialog-columns"><label>RAM (МиБ)<input v-model.number="deviceRAM" type="number" min="128" max="131072" required/></label>
           <label>vCPU<input v-model.number="deviceCPU" type="number" min="1" max="64" required/></label></div>
-          <div class="dialog-columns"><label>Сетевая карта<select v-model="deviceNicModel"><option value="virtio-net-pci">VirtIO</option><option value="e1000">Intel E1000</option><option value="rtl8139">RTL8139</option></select></label>
-          <label>Шина диска<select v-model="deviceDiskBus"><option value="virtio">VirtIO</option><option value="ide">IDE</option><option value="scsi">SCSI</option></select></label></div>
+          <div class="dialog-columns"><label>Сетевая карта<UiSelect v-model="deviceNicModel"><option value="virtio-net-pci">VirtIO</option><option value="e1000">Intel E1000</option><option value="rtl8139">RTL8139</option></UiSelect></label>
+          <label>Шина диска<UiSelect v-model="deviceDiskBus"><option value="virtio">VirtIO</option><option value="ide">IDE</option><option value="scsi">SCSI</option></UiSelect></label></div>
           <label>Число Ethernet-портов<input v-model.number="nicCount" type="number" min="1" max="16" required/></label>
           <p v-if="!store.images.length">Для QEMU необходимо сначала загрузить образ в библиотеку.</p>
         </template>

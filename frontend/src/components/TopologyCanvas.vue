@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiSelect from '@/components/UiSelect.vue'
 import { computed, nextTick, ref, watch, onBeforeUnmount, onMounted } from 'vue'
 import { VueFlow, useVueFlow, type Connection } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -17,6 +18,51 @@ type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'i
 const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'add-at',position:{x:number;y:number}):void; (e:'bulk', ids:string[]):void; (e:'device-action', payload:{id:string;action:DeviceContextAction}):void; (e:'delete-selection',ids:string[]):void; (e:'template-at',payload:{templateID:string;x:number;y:number}):void }>()
 const { fitView, zoomIn, zoomOut, setViewport, updateNodeInternals, viewport, screenToFlowCoordinate } = useVueFlow({ id:'netlab-topology' })
 const canvasElement=ref<HTMLElement|null>(null)
+const hoveredDeviceID=ref<string|null>(null)
+const hoveredCableID=ref<string|null>(null)
+const hoverTip=ref<{left:number;top:number;text:string}|null>(null)
+const activeCable=computed(()=>current.value?.links.find(link=>link.id===hoveredCableID.value))
+const connectedHoverDevices=computed(()=>{
+  const result=new Set<string>()
+  const link=activeCable.value
+  if(link){result.add(link.a);result.add(link.b)}
+  return result
+})
+function positionHoverTip(event:MouseEvent,text:string){
+  const bounds=canvasElement.value?.getBoundingClientRect()
+  if(!bounds)return
+  hoverTip.value={
+    left:Math.max(8,Math.min(bounds.width-260,event.clientX-bounds.left+14)),
+    top:Math.max(8,Math.min(bounds.height-72,event.clientY-bounds.top+16)),
+    text
+  }
+}
+function hoverDevice(payload:{id:string;active:boolean;event:MouseEvent}){
+  if(!payload.active){
+    if(hoveredDeviceID.value===payload.id){hoveredDeviceID.value=null;hoverTip.value=null}
+    return
+  }
+  hoveredDeviceID.value=payload.id
+  hoveredCableID.value=null
+  const device=current.value?.nodes.find(node=>node.id===payload.id)
+  if(!device)return
+  const activePorts=(current.value?.links||[]).filter(link=>link.a===device.id||link.b===device.id).length
+  positionHoverTip(payload.event,`${device.name} · ${device.status==='running'?'Запущен':'Остановлен'} · Соединений: ${activePorts}`)
+}
+function hoverCable(id:string,active:boolean,event:MouseEvent){
+  if(!active){
+    if(hoveredCableID.value===id){hoveredCableID.value=null;hoverTip.value=null}
+    return
+  }
+  hoveredCableID.value=id
+  hoveredDeviceID.value=null
+  const cable=current.value?.links.find(link=>link.id===id)
+  if(!cable)return
+  const first=current.value?.nodes.find(node=>node.id===cable.a)
+  const second=current.value?.nodes.find(node=>node.id===cable.b)
+  positionHoverTip(event,`${first?.name||'Устройство'}: ${portLabel(first,cable.aPort)} ↔ ${second?.name||'Устройство'}: ${portLabel(second,cable.bPort)} · ${cable.status||'Соединено'}`)
+}
+function clearHover(){hoveredDeviceID.value=null;hoveredCableID.value=null;hoverTip.value=null}
 const panMode = ref(false)
 const drawingMode=ref<'select'|'marquee'|'text'|'note'>('select')
 const drawingBox=ref<{left:number;top:number;width:number;height:number}|null>(null)
@@ -449,7 +495,9 @@ const nodes = computed(() => [
   ...(current.value?.nodes.map(device=>({
     id:device.id,type:'device',position:{x:device.x,y:device.y},
     draggable:!panMode.value,selectable:!panMode.value,
-    data:{device,anchors:portsByNode.value.get(device.id)||[]}
+    data:{device,anchors:portsByNode.value.get(device.id)||[],
+      hovered:hoveredDeviceID.value===device.id,
+      connected:connectedHoverDevices.value.has(device.id)}
   }))||[]),
   ...(current.value?.annotations||[]).map(annotation=>{
     const preview=resizePreview.value?.id===annotation.id?resizePreview.value.rect:null
@@ -466,12 +514,14 @@ const edges = computed(() => current.value?.links.filter(link=>geometry.value.ha
   type:'cable',selectable:true,
   data:{aLabel:portLabel(current.value?.nodes.find(n=>n.id===link.a),link.aPort),
     bLabel:portLabel(current.value?.nodes.find(n=>n.id===link.b),link.bPort),
-    color:link.color,width:link.lineWidth,lineStyle:link.lineStyle,status:link.status,onEdit:editLink,onContext:openCableContext}
+    color:link.color,width:link.lineWidth,lineStyle:link.lineStyle,status:link.status,onEdit:editLink,onContext:openCableContext,onHover:hoverCable,
+    emphasized:hoveredCableID.value===link.id,
+    related:hoveredDeviceID.value===link.a||hoveredDeviceID.value===link.b}
 }))||[])
 // After adding/removing a cable, Vue Flow must remeasure DOM handles.
 const internalsKey = computed(() => `${store.labID}:${current.value?.nodes.map(n=>`${n.id}:${n.x},${n.y}`).join('|')}:${current.value?.links.map(l=>`${l.id}:${l.a}:${l.b}`).join('|')}`)
 watch(internalsKey,async()=>{await nextTick();updateNodeInternals((current.value?.nodes || []).map(n=>n.id))},{flush:'post'})
-watch(()=>store.labID,async()=>{firstCableNode.value=null;selectedOnCanvas.value=[];dismissContextMenu();closeDeviceContext();closeCanvasContext();resizeCancel();await nextTick();void fitView({padding:.22,duration:250})})
+watch(()=>store.labID,async()=>{clearHover();firstCableNode.value=null;selectedOnCanvas.value=[];dismissContextMenu();closeDeviceContext();closeCanvasContext();resizeCancel();await nextTick();void fitView({padding:.22,duration:250})})
 const startName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.a)?.name || '')
 const endName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.b)?.name || '')
 const firstPorts = computed(() => availablePorts(current.value?.nodes||[],current.value?.links||[],pending.value?.a||''))
@@ -554,22 +604,26 @@ function closeEditor(){editingID.value=null}
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
       @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="paneClickAt" @pane-double-click="paneDoubleClick" @pane-context-menu="openPaneContext" @selection-change="selectionChanged">
       <Background pattern-color="var(--grid)" :gap="20" :size="1" />
-      <template #node-device="data"><DeviceNode :data="data.data" @device-context="openDeviceContext" /></template>
+      <template #node-device="data"><DeviceNode :data="data.data" @device-context="openDeviceContext" @device-hover="hoverDevice"/></template>
       <template #node-annotation="data"><AnnotationNode :data="data.data" @resize-start="resizeStart" @context="openAnnotationContext" /></template>
       <template #edge-cable="data"><CableEdge v-bind="data" /></template>
     </VueFlow>
+    <div v-if="hoverTip" class="topology-hover-tip" role="status" :style="{left:hoverTip.left+'px',top:hoverTip.top+'px'}">{{hoverTip.text}}</div>
+    <!-- Exact tool order of the legacy editor: select, hand, cable / marquee, text, note / add. -->
     <div class="canvas-tools" role="toolbar" aria-label="Инструменты топологии">
-      <button type="button" :class="{on:!panMode&&!cableMode&&drawingMode==='select'}" title="Выделение (V)" @click="setCanvasMode('select')"><MousePointer2 :size="17"/></button>
-      <button type="button" :class="{on:panMode}" title="Перемещать полотно (H или пробел)" @click="setCanvasMode('pan')"><Hand :size="17"/></button>
-      <button type="button" :class="{on:cableMode}" title="Кабель (C): нажмите два устройства" @click="setCanvasMode(cableMode?'select':'cable')"><CableIcon :size="17"/></button>
-      <span class="tool-separator" />
-      <button type="button" title="Добавить устройство" @click="emit('add')"><Plus :size="18"/></button>
-      <button type="button" :class="{on:drawingMode==='text'}" title="Текст (T): нажмите на полотно" @click="setCanvasMode('text')"><Type :size="17"/></button>
-      <button type="button" :class="{on:drawingMode==='note'}" title="Примечание (N): выделите прямоугольник на полотне" @click="setCanvasMode('note')"><StickyNote :size="17"/></button>
-      <button type="button" :class="{on:drawingMode==='marquee'}" title="Выделение рамкой (M)" @click="setCanvasMode('marquee')"><MousePointer2 :size="15"/></button>
-      <button type="button" title="Показать всю топологию" @click="fitView({padding:.2,duration:250})"><Scan :size="17"/></button>
-      <span v-if="selectedDevices.length>1" class="canvas-selection-count">Выбрано: {{selectedDevices.length}}</span>
-      <button v-if="selectedDevices.length>1" type="button" title="Действия с выбранными устройствами" @click="bulkSelectedDevices"><MousePointer2 :size="16"/> Действия</button>
+      <button type="button" :class="{on:!panMode&&!cableMode&&drawingMode==='select'}" title="Выбор и перемещение (V)" aria-label="Выбор и перемещение" @click="setCanvasMode('select')"><MousePointer2 :size="17"/></button>
+      <button type="button" :class="{on:panMode}" title="Перемещение полотна (H / Space)" aria-label="Перемещение полотна" @click="setCanvasMode('pan')"><Hand :size="17"/></button>
+      <button type="button" :class="{on:cableMode}" title="Соединение устройств (C)" aria-label="Соединить устройства" @click="setCanvasMode(cableMode?'select':'cable')"><CableIcon :size="17"/></button>
+      <span class="tool-separator" aria-hidden="true"/>
+      <button type="button" :class="{on:drawingMode==='marquee'}" title="Выделить несколько устройств рамкой (M)" aria-label="Выделение рамкой" @click="setCanvasMode('marquee')"><Scan :size="17"/></button>
+      <button type="button" :class="{on:drawingMode==='text'}" title="Добавить текст на поле (T)" aria-label="Добавить текст" @click="setCanvasMode('text')"><Type :size="17"/></button>
+      <button type="button" :class="{on:drawingMode==='note'}" title="Добавить примечание (N)" aria-label="Добавить примечание" @click="setCanvasMode('note')"><StickyNote :size="17"/></button>
+      <span class="tool-separator" aria-hidden="true"/>
+      <button type="button" title="Добавить устройство (+)" aria-label="Добавить устройство" @click="emit('add')"><Plus :size="18"/></button>
+    </div>
+    <div v-if="selectedDevices.length>1" class="canvas-selection-actions">
+      <span>Выбрано: {{selectedDevices.length}}</span>
+      <button type="button" @click="bulkSelectedDevices">Действия</button>
     </div>
     <div class="canvas-scale" aria-label="Масштаб полотна">
       <button type="button" title="Уменьшить" @click="zoomOut({duration:150})"><Minus :size="16"/></button>
@@ -578,7 +632,6 @@ function closeEditor(){editingID.value=null}
       <button type="button" title="Показать всё" @click="fitView({padding:.2,duration:250})"><Maximize :size="16"/></button>
     </div>
     <div v-if="drawingBox" class="canvas-annotation-preview" :style="{left:drawingBox.left+'px',top:drawingBox.top+'px',width:drawingBox.width+'px',height:drawingBox.height+'px'}"></div>
-    <div v-if="!panMode&&!cableMode" class="canvas-selection-hint">Shift + перетаскивание — выделить рамкой · Ctrl/Cmd + клик — несколько устройств</div>
     <div v-if="cableMode" class="canvas-cable-hint"><CableIcon :size="14"/> {{firstCableNode?'Выберите второе устройство':'Выберите первое устройство'}} <button title="Отменить" @click="cableMode=false;firstCableNode=null"><X :size="13"/></button></div>
     <div v-if="!current?.nodes.length" class="canvas-empty"><MonitorPlay :size="30"/><strong>Лаборатория пуста</strong><span>Нажмите «+», чтобы добавить устройство</span></div>
     <div v-if="canvasContextMenu" class="device-context-menu canvas-context-menu" role="menu" aria-label="Действия на топологии" :style="{left:`${canvasContextMenu.x}px`,top:`${canvasContextMenu.y}px`}">
@@ -637,8 +690,8 @@ function closeEditor(){editingID.value=null}
         <label>Цвет рамки<input v-model="annotationDraft.borderColor" type="color"/></label></div>
         <div class="dialog-columns"><label>Толщина рамки<input v-model.number="annotationDraft.borderWidth" type="number" min="0" max="12"/></label>
         <label>Подгонка высоты<button type="button" @click="fitDraftHeight">Подогнать под текст</button></label></div>
-        <div class="dialog-columns"><label>Фон<select v-model="annotationDraft.background"><option value="transparent">Прозрачный</option><option value="#fff4c4">Жёлтый</option><option value="#e4f1ff">Голубой</option><option value="#f2eaff">Фиолетовый</option><option value="#ffffff">Белый</option></select></label>
-        <label>Выравнивание<select v-model="annotationDraft.align"><option value="left">Слева</option><option value="center">По центру</option><option value="right">Справа</option></select></label></div>
+        <div class="dialog-columns"><label>Фон<UiSelect v-model="annotationDraft.background"><option value="transparent">Прозрачный</option><option value="#fff4c4">Жёлтый</option><option value="#e4f1ff">Голубой</option><option value="#f2eaff">Фиолетовый</option><option value="#ffffff">Белый</option></UiSelect></label>
+        <label>Выравнивание<UiSelect v-model="annotationDraft.align"><option value="left">Слева</option><option value="center">По центру</option><option value="right">Справа</option></UiSelect></label></div>
         <div class="annotation-format"><label><input v-model="annotationDraft.bold" type="checkbox"/> Жирный</label><label><input v-model="annotationDraft.italic" type="checkbox"/> Курсив</label><label><input v-model="annotationDraft.underline" type="checkbox"/> Подчёркнутый</label></div>
         <div class="dialog-actions"><button v-if="annotationID" type="button" class="cable-delete" @click="deleteAnnotation"><Trash2 :size="14"/> Удалить</button><button type="button" @click="annotationOpen=false">Отмена</button>
           <button class="primary" :disabled="annotationSaving||annotationDraft.width<80||annotationDraft.width>1200||annotationDraft.height<36||annotationDraft.height>800">Сохранить</button></div>
@@ -648,8 +701,8 @@ function closeEditor(){editingID.value=null}
       <form class="dialog-card" @submit.prevent="createLink">
         <div class="dialog-heading"><CableIcon :size="18"/><strong>Подключить Ethernet</strong></div>
         <p>{{startName}} ↔ {{endName}}</p>
-        <label>Интерфейс {{startName}}<select v-model.number="chosen.a"><option v-for="p in firstPorts" :key="p" :value="p">{{portLabel(current?.nodes.find(n=>n.id===pending?.a),p)}}</option></select></label>
-        <label>Интерфейс {{endName}}<select v-model.number="chosen.b"><option v-for="p in secondPorts" :key="p" :value="p">{{portLabel(current?.nodes.find(n=>n.id===pending?.b),p)}}</option></select></label>
+        <label>Интерфейс {{startName}}<UiSelect v-model.number="chosen.a"><option v-for="p in firstPorts" :key="p" :value="p">{{portLabel(current?.nodes.find(n=>n.id===pending?.a),p)}}</option></UiSelect></label>
+        <label>Интерфейс {{endName}}<UiSelect v-model.number="chosen.b"><option v-for="p in secondPorts" :key="p" :value="p">{{portLabel(current?.nodes.find(n=>n.id===pending?.b),p)}}</option></UiSelect></label>
         <div class="dialog-actions"><button type="button" @click="pending=null">Отмена</button><button type="submit" class="primary" :disabled="saving||!firstPorts.length||!secondPorts.length">Подключить</button></div>
       </form>
     </div>
@@ -657,12 +710,12 @@ function closeEditor(){editingID.value=null}
       <form class="dialog-card cable-dialog" @submit.prevent="saveLink">
         <div class="dialog-heading"><CableIcon :size="18"/><strong>Настройки Ethernet-кабеля</strong></div>
         <p>Смена интерфейсов переподключает Ethernet на горячую. Оформление не влияет на сеть.</p>
-        <div class="dialog-columns"><label>Устройство A<select v-model="edit.a" @change="changeEndpoint('a')"><option v-for="device in current?.nodes||[]" :key="device.id" :value="device.id">{{device.name}}</option></select></label>
-          <label>Устройство B<select v-model="edit.b" @change="changeEndpoint('b')"><option v-for="device in current?.nodes||[]" :key="device.id" :value="device.id">{{device.name}}</option></select></label></div>
-        <div class="dialog-columns"><label>Интерфейс A<select v-model.number="edit.aPort"><option v-for="p in editFirstPorts" :key="p" :value="p">{{portLabel(editA,p)}}</option></select></label>
-          <label>Интерфейс B<select v-model.number="edit.bPort"><option v-for="p in editSecondPorts" :key="p" :value="p">{{portLabel(editB,p)}}</option></select></label></div>
-        <div class="dialog-columns cable-style"><label>Цвет<input v-model="edit.color" type="color" /></label><label>Толщина<select v-model.number="edit.lineWidth"><option v-for="n in [1,2,3,4]" :key="n" :value="n">{{n}} px</option></select></label>
-          <label>Линия<select v-model="edit.lineStyle"><option value="solid">Сплошная</option><option value="dashed">Пунктир</option><option value="dotted">Точки</option></select></label></div>
+        <div class="dialog-columns"><label>Устройство A<UiSelect v-model="edit.a" @change="changeEndpoint('a')"><option v-for="device in current?.nodes||[]" :key="device.id" :value="device.id">{{device.name}}</option></UiSelect></label>
+          <label>Устройство B<UiSelect v-model="edit.b" @change="changeEndpoint('b')"><option v-for="device in current?.nodes||[]" :key="device.id" :value="device.id">{{device.name}}</option></UiSelect></label></div>
+        <div class="dialog-columns"><label>Интерфейс A<UiSelect v-model.number="edit.aPort"><option v-for="p in editFirstPorts" :key="p" :value="p">{{portLabel(editA,p)}}</option></UiSelect></label>
+          <label>Интерфейс B<UiSelect v-model.number="edit.bPort"><option v-for="p in editSecondPorts" :key="p" :value="p">{{portLabel(editB,p)}}</option></UiSelect></label></div>
+        <div class="dialog-columns cable-style"><label>Цвет<input v-model="edit.color" type="color" /></label><label>Толщина<UiSelect v-model.number="edit.lineWidth"><option v-for="n in [1,2,3,4]" :key="n" :value="n">{{n}} px</option></UiSelect></label>
+          <label>Линия<UiSelect v-model="edit.lineStyle"><option value="solid">Сплошная</option><option value="dashed">Пунктир</option><option value="dotted">Точки</option></UiSelect></label></div>
         <svg class="cable-preview" viewBox="0 0 340 38"><line x1="15" y1="19" x2="325" y2="19" :stroke="edit.color" :stroke-width="edit.lineWidth" :stroke-dasharray="edit.lineStyle==='dashed'?'8 5':edit.lineStyle==='dotted'?'2 5':undefined" stroke-linecap="round"/><circle cx="15" cy="19" r="3" fill="var(--surface)" stroke="var(--accent)"/><circle cx="325" cy="19" r="3" fill="var(--surface)" stroke="var(--accent)"/></svg>
         <div class="dialog-actions"><button type="button" class="cable-delete" @click="deleteLink"><Trash2 :size="14"/> Удалить</button><button type="button" @click="closeEditor">Отмена</button><button class="primary" :disabled="saving||edit.a===edit.b||!editFirstPorts.includes(edit.aPort)||!editSecondPorts.includes(edit.bPort)">Применить</button></div>
       </form>
