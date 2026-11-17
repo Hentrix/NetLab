@@ -47,6 +47,21 @@ func validateImageMetadata(name,category,family,version string) error {
  if !validImageText(family)||!validImageText(version){return errors.New("семейство/версия слишком длинные")}
  return nil
 }
+// A published category/family/version identifies one immutable catalog revision.
+// Renaming a version is allowed only if it does not collide with another image.
+func catalogVersionConflict(images []Image, exceptID, category, family, version string) bool {
+ family = strings.TrimSpace(family)
+ version = strings.TrimSpace(version)
+ if family == "" || version == "" { return false }
+ for _, image := range images {
+  if image.ID == exceptID || !image.Published || image.Draft || image.isISO() { continue }
+  if image.Category == category &&
+   strings.EqualFold(strings.TrimSpace(image.Family), family) &&
+   strings.EqualFold(strings.TrimSpace(image.Version), version) { return true }
+ }
+ return false
+}
+
 func (s *Server) createBlankImage(w http.ResponseWriter,r *http.Request){
  var req struct{Name string `json:"name"`; SizeGiB int `json:"sizeGiB"`}
  if !decode(w,r,&req){return}
@@ -80,6 +95,9 @@ func (s *Server) updateImageMetadata(w http.ResponseWriter,r *http.Request,id st
  defer s.store.mu.Unlock()
  img:=findImage(&s.store.State,id)
  if img==nil{fail(w,404,"образ не найден");return}
+ if img.Published && catalogVersionConflict(s.store.State.Images,id,req.Category,req.Family,req.Version) {
+  fail(w,409,"такая версия уже опубликована: выберите другую версию");return
+ }
  before:=*img
  img.Name=strings.TrimSpace(req.Name)
  img.Category=req.Category
@@ -108,6 +126,9 @@ func (s *Server) workshopAPI(w http.ResponseWriter,r *http.Request,p []string){
  base:=findImage(&s.store.State,node.ImageID)
  if base==nil || base.isISO() || !base.Draft {
   fail(w,409,"можно публиковать только подготовительную VM с черновым диском");return
+ }
+ if catalogVersionConflict(s.store.State.Images,"",req.Category,req.Family,req.Version) {
+  fail(w,409,"такая версия уже опубликована: укажите новую версию");return
  }
  status,_:=s.engine.Status(req.LabID,req.NodeID)
  if status!="stopped" {
