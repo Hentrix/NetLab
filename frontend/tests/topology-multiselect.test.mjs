@@ -24,7 +24,14 @@ test('group drag persists all moved node positions through existing endpoints', 
   assert.match(store, /labs\/\$\{lab\.id\}\/nodes\//)
   assert.match(store, /await refresh\(\)\s*if\(errors\.length\)/)
 })
-test('topology keyboard hints document marquee and additive selection', () => {
-  assert.match(canvas, /Shift \+ перетаскивание/)
-  assert.match(canvas, /Ctrl\/Cmd \+ клик/)
+test('toolbar matches legacy order without overlap-prone keyboard hint', () => {
+  const names=['Выбор и перемещение','Перемещение полотна','Соединение устройств','Выделение рамкой','Добавить текст','Добавить примечание','Добавить устройство']
+  const toolbar=canvas.slice(canvas.indexOf('class="canvas-tools"'),canvas.indexOf('class="canvas-scale"'))
+  let previous=-1
+  for(const name of names){
+    const next=toolbar.indexOf('aria-label="'+name+'"')
+    assert.ok(next>previous,name)
+    previous=next
+  }
+  assert.doesNotMatch(canvas,/class="canvas-selection-hint"/)
 })
