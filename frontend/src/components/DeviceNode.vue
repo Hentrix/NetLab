@@ -6,7 +6,7 @@ import type { Device } from '@/types'
 import type { PortAnchor, Side } from '@/topology/cable-layout'
 
 interface LinkHandle { linkId: string; end: 'source' | 'target'; anchor: PortAnchor }
-const props = defineProps<{ data: { device: Device; anchors?: LinkHandle[]; hovered?:boolean; connected?:boolean } }>()
+const props = defineProps<{ data: { device: Device; anchors?: LinkHandle[]; hovered?:boolean; connected?:boolean; selected?:boolean } }>()
 const emit=defineEmits<{(e:'device-context',payload:{id:string;event:MouseEvent}):void;(e:'device-hover',payload:{id:string;active:boolean;event:MouseEvent}):void}>()
 function openContext(event:MouseEvent){
   event.preventDefault()
@@ -23,7 +23,7 @@ const pointStyle = (point: PortAnchor) => ({
 </script>
 <template>
   <div class="device-node" @mouseenter="deviceHover($event,true)" @mousemove="deviceHover($event,true)" @mouseleave="deviceHover($event,false)"
-    @contextmenu="openContext" :class="{'device-running': device.status === 'running','device-hovered':data.hovered,'device-connected-hover':data.connected}" :title="device.name">
+    @contextmenu="openContext" :class="{'device-running': device.status === 'running','device-hovered':data.hovered,'device-connected-hover':data.connected,'device-selected':data.selected}" :title="device.name">
     <!-- Existing cables use private, stable handles. Different interface numbers
          cannot snap three cables onto one generic VueFlow source handle. -->
     <Handle v-for="h in data.anchors || []" :key="`${h.end}-${h.linkId}`"
