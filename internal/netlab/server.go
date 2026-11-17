@@ -289,12 +289,34 @@ func (s *Server) imagesAPI(w http.ResponseWriter, r *http.Request, p []string) {
 		}
 		for i, img := range s.store.State.Images {
 			if img.ID == p[1] {
-				s.store.State.Images = append(s.store.State.Images[:i], s.store.State.Images[i+1:]...)
+				// Stage the file before changing the database. A failed state save
+				// must never leave an in-memory deletion or a broken base image.
+				path := filepath.Join(s.data, "images", img.ID+"."+img.Format)
+				staged := path + ".deleting"
+				if err := os.Rename(path, staged); err != nil {
+					fail(w, 500, "не удалось подготовить образ к удалению: "+err.Error())
+					return
+				}
+				previous := s.store.State.Images
+				next := make([]Image, 0, len(previous)-1)
+				next = append(next, previous[:i]...)
+				next = append(next, previous[i+1:]...)
+				s.store.State.Images = next
 				if err := s.store.save(); err != nil {
+					s.store.State.Images = previous
+					if restoreErr := os.Rename(staged, path); restoreErr != nil {
+						fail(w, 500, "не удалось восстановить образ после ошибки сохранения: "+restoreErr.Error())
+						return
+					}
 					fail(w, 500, err.Error())
 					return
 				}
-				_ = os.Remove(filepath.Join(s.data, "images", img.ID+"."+img.Format))
+				// A cleanup failure leaves an unreferenced staged file, not a
+				// corrupted database or a dangling overlay backing file.
+				if err := os.Remove(staged); err != nil {
+					respond(w, 200, map[string]bool{"deleted": true, "cleanupPending": true})
+					return
+				}
 				respond(w, 200, map[string]bool{"deleted": true})
 				return
 			}
