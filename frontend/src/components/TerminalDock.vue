@@ -10,7 +10,8 @@ const props = defineProps<{theme: 'light' | 'dark'}>()
 interface Session {
   id:string; lab:string; node:string; name:string; term:XTerm; fit:FitAddon;
   host:HTMLDivElement; abort:AbortController; cursor:number; decoder:TextDecoder;
-  status:'connecting'|'online'|'offline'|'stopped'; pending:Promise<void>; stopped:boolean; stopNoticeShown:boolean
+  status:'connecting'|'online'|'offline'|'stopped'; pending:Promise<void>; stopped:boolean; stopNoticeShown:boolean;
+  inputBuffer:string; flushTimer:ReturnType<typeof setTimeout>|null
 }
 const sessions=ref<Session[]>([])
 const current=ref<string|null>(null)
@@ -36,13 +37,25 @@ watch(()=>store.labs, labs=>{
 function showStoppedOnce(s:Session, message:string){
   s.stopped=true
   s.status='stopped'
+  if(s.flushTimer!==null){clearTimeout(s.flushTimer);s.flushTimer=null}
+  s.inputBuffer=''
   if(s.stopNoticeShown)return
   s.stopNoticeShown=true
   s.term.write(`\r\n[NetLab] ${message}\r\n`)
 }
 function authPath(s:Session){return `/api/labs/${encodeURIComponent(s.lab)}/nodes/${encodeURIComponent(s.node)}`}
 function send(s:Session, data:string){
-  if(s.stopped)return
+  if(s.stopped||s.abort.signal.aborted)return
+  s.inputBuffer+=data
+  // Ordinary typing is batched; Enter and Ctrl+C must be delivered at once.
+  if(/[\r\n\x03]/.test(data)||s.inputBuffer.length>=128)flushInput(s)
+  else if(s.flushTimer===null)s.flushTimer=setTimeout(()=>flushInput(s),20)
+}
+function flushInput(s:Session){
+  if(s.flushTimer!==null){clearTimeout(s.flushTimer);s.flushTimer=null}
+  const data=s.inputBuffer
+  s.inputBuffer=''
+  if(!data||s.stopped||s.abort.signal.aborted)return
   s.pending=s.pending.then(async()=>{
     if(s.stopped||s.abort.signal.aborted)return
     const response=await fetch(`${authPath(s)}/console`,{method:'POST',headers:{Authorization:`Bearer ${store.token}`,'Content-Type':'application/json'},body:JSON.stringify({text:data})})
@@ -109,16 +122,55 @@ async function open(device:Device){
   const term=new XTerm({cursorBlink:true,convertEol:false,scrollback:7000,theme:palette(dark.value),fontSize:13,fontFamily:'Consolas, "Cascadia Code", monospace'})
   const fit=new FitAddon();term.loadAddon(fit)
   const host=document.createElement('div');host.className='terminal-instance';host.style.display='none'
-  const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve(),stopped:false,stopNoticeShown:false}
+  const s:Session={id,lab:store.activeLab.id,node:device.id,name:device.name,term:markRaw(term),fit:markRaw(fit),host:markRaw(host),abort:markRaw(new AbortController()),cursor:0,decoder:markRaw(new TextDecoder()),status:'connecting',pending:Promise.resolve(),stopped:false,stopNoticeShown:false,inputBuffer:'',flushTimer:null}
   sessions.value.push(s);current.value=id;minimized.value=false
   await nextTick()
-  dock.value?.querySelector('.terminal-hosts')?.appendChild(host)
-  term.open(host);term.onData(text=>send(s,text));await nextTick()
-  select(id);void stream(s)
+  const holder=dock.value?.querySelector('.terminal-hosts')
+  if(!holder){sessions.value=sessions.value.filter(item=>item.id!==id);term.dispose();return}
+  for(const item of sessions.value)item.host.style.display=item.id===id?'block':'none'
+  holder.appendChild(host)
+  host.style.display='block'
+  term.open(host)
+  term.onData(text=>send(s,text))
+  await nextTick()
+  select(id)
+  void stream(s)
 }
-function fitActive(){const s=active.value;if(!s||minimized.value)return;requestAnimationFrame(()=>{if(s.host.isConnected && s.host.clientWidth>20&&s.host.clientHeight>20){s.fit.fit();s.term.refresh(0,s.term.rows-1)}})}
-function select(id:string){current.value=id;minimized.value=false;for(const s of sessions.value)s.host.style.display=s.id===id?'block':'none';fitActive();sessions.value.find(s=>s.id===id)?.term.focus()}
-function close(id:string){const s=sessions.value.find(item=>item.id===id);if(!s)return;s.abort.abort();s.term.dispose();s.host.remove();sessions.value=sessions.value.filter(item=>item.id!==id);if(current.value===id){current.value=sessions.value[0]?.id??null;if(current.value)void nextTick(()=>select(current.value!))}}
+let focusRevision=0
+function fitActive(shouldFocus=false){
+  const s=active.value
+  if(!s||minimized.value)return
+  const revision=++focusRevision
+  requestAnimationFrame(()=>{
+    if(revision!==focusRevision||current.value!==s.id||minimized.value)return
+    if(!s.host.isConnected||s.host.clientWidth<=20||s.host.clientHeight<=20)return
+    s.fit.fit()
+    s.term.refresh(0,s.term.rows-1)
+    if(shouldFocus)s.term.focus()
+  })
+}
+function select(id:string){
+  if(!sessions.value.some(s=>s.id===id))return
+  current.value=id
+  minimized.value=false
+  for(const s of sessions.value)s.host.style.display=s.id===id?'block':'none'
+  void nextTick(()=>fitActive(true))
+}
+function close(id:string){
+  const s=sessions.value.find(item=>item.id===id)
+  if(!s)return
+  s.abort.abort()
+  if(s.flushTimer!==null){clearTimeout(s.flushTimer);s.flushTimer=null}
+  s.inputBuffer=''
+  s.term.dispose()
+  s.host.remove()
+  sessions.value=sessions.value.filter(item=>item.id!==id)
+  if(current.value===id){
+    current.value=null
+    const next=sessions.value[0]
+    if(next)void nextTick(()=>select(next.id))
+  }
+}
 function closeAll(){for(const s of [...sessions.value])close(s.id)}
 function moveStart(event:PointerEvent){if(event.button!==0||maximized.value||(event.target as HTMLElement).closest('button'))return
   dragging={x:event.clientX,y:event.clientY,left:left.value??Math.max(0,window.innerWidth-910),top:top.value??Math.max(0,window.innerHeight-580)}
@@ -127,10 +179,10 @@ function moveStart(event:PointerEvent){if(event.button!==0||maximized.value||(ev
 function move(event:PointerEvent){if(!dragging)return;left.value=Math.min(window.innerWidth-110,Math.max(0,dragging.left+event.clientX-dragging.x));top.value=Math.min(window.innerHeight-50,Math.max(0,dragging.top+event.clientY-dragging.y))}
 function moveEnd(){dragging=null}
 watch(dark,()=>{for(const s of sessions.value)s.term.options.theme=palette(dark.value)})
-watch(minimized,async value=>{if(!value){await nextTick();fitActive()}})
+watch(minimized,async value=>{if(!value){await nextTick();fitActive(true)}})
 watch(maximized,async()=>{await nextTick();fitActive()})
 onBeforeUnmount(()=>{closeAll();resize?.disconnect()})
-watch(dock,element=>{resize?.disconnect();if(element&&typeof ResizeObserver!=='undefined'){resize=new ResizeObserver(fitActive);resize.observe(element)}})
+watch(dock,element=>{resize?.disconnect();if(element&&typeof ResizeObserver!=='undefined'){resize=new ResizeObserver(()=>fitActive());resize.observe(element)}})
 defineExpose({open})
 </script>
 <template>
@@ -139,11 +191,11 @@ defineExpose({open})
       <div class="term-header-name"><TerminalSquare :size="18"/> Консоли NetLab</div>
       <div class="term-actions"><button title="Свернуть" @click="minimized=true"><Minus :size="16"/></button><button title="Развернуть" @click="maximized=!maximized"><Maximize2 :size="15"/></button><button title="Закрыть все консоли" @click="closeAll"><X :size="17"/></button></div>
     </div>
-    <template v-if="!minimized">
-      <nav class="term-tabs"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @click="select(s.id)"><i :class="s.status"/>{{s.name}}</button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
-      <div class="terminal-hosts"></div>
-      <footer class="term-footer"><span>{{active?.status==='online'?'Соединение активно':active?.status==='stopped'?'Устройство остановлено':'Подключение / ожидание API'}}</span><button @click="active&&select(active.id)"><RefreshCcw :size="13"/> Обновить отображение</button></footer>
+    <template>
+      <nav class="term-tabs" v-show="!minimized"><div v-for="s in sessions" :key="s.id" class="term-tab" :class="{active:current===s.id}"><button @click="select(s.id)"><i :class="s.status"/>{{s.name}}</button><button title="Закрыть вкладку" @click="close(s.id)"><X :size="13"/></button></div></nav>
+      <div class="terminal-hosts" v-show="!minimized"></div>
+      <footer class="term-footer" v-show="!minimized"><span>{{active?.status==='online'?'Соединение активно':active?.status==='stopped'?'Устройство остановлено':'Подключение / ожидание API'}}</span><button @click="active&&select(active.id)"><RefreshCcw :size="13"/> Обновить отображение</button></footer>
     </template>
-    <button v-else class="restore-console" @click="minimized=false">{{sessions.length}} вкладок · Развернуть</button>
+    <button v-if="minimized" class="restore-console" @click="minimized=false">{{sessions.length}} вкладок · Развернуть</button>
   </div>
 </template>
