@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { LayoutDashboard, HardDrive, Activity, Moon, Sun, Plus, Play, Square, RotateCcw, Camera, Router, Monitor, Shield, Server, TerminalSquare, Trash2, Cable, GitBranch, Pencil, LogOut, X, ChevronDown } from '@lucide/vue'
 import { useNetlabStore } from '@/stores/netlab'
-import { portLabel } from '@/api/client'
+import { api, portLabel } from '@/api/client'
 import type { Device, Template, PortSpec } from '@/types'
 import TopologyCanvas from '@/components/TopologyCanvas.vue'
 import SystemOverview from '@/components/SystemOverview.vue'
@@ -16,6 +16,23 @@ const theme=ref<'light' | 'dark'>(localStorage.getItem('netlab-theme')==='dark'?
 const newLab=ref('');const createLabOpen=ref(false)
 const addOpen=ref(false)
 const requestedNodePosition=ref<{x:number;y:number}|null>(null)
+const deviceLogOpen=ref(false)
+const deviceLogLoading=ref(false)
+const deviceLogName=ref('')
+const deviceLogOutput=ref('')
+async function showDeviceLog(device:Device){
+  const lab=store.activeLab
+  if(!lab)return
+  deviceLogOpen.value=true
+  deviceLogLoading.value=true
+  deviceLogName.value=device.name
+  deviceLogOutput.value=''
+  try{
+    const response=await api<{output:string}>(store.token,`labs/${lab.id}/nodes/${device.id}/log`)
+    deviceLogOutput.value=response.output||'Журнал пуст'
+  }catch(error){deviceLogOutput.value=(error as Error).message}
+  finally{deviceLogLoading.value=false}
+}
 const batchCount=ref(1)
 const templateID=ref('vpcs');const imageID=ref('');const deviceName=ref('');const nicCount=ref(4)
 const inFlight=ref(false)
@@ -187,7 +204,7 @@ async function removeCable(id:string){if(window.confirm('Отключить Ethe
 async function powerLab(op:'start'|'stop'){await store.labPower(op)}
 function kindIcon(kind?:string){return kind==='pc'?'pc':kind==='firewall'?'shield':kind==='server'?'server':'router'}
 function consoleOpen(device:Device){terminal.value?.open(device)}
-type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'
+type DeviceContextAction='console'|'start'|'stop'|'rename'|'hardware'|'ports'|'icon'|'delete'|'log'
 async function deviceContextAction(payload:{id:string;action:DeviceContextAction}){
   // Resolve the current node by ID: polling can replace store objects while a menu is open.
   const device=store.activeLab?.nodes.find(node=>node.id===payload.id)
@@ -201,6 +218,7 @@ async function deviceContextAction(payload:{id:string;action:DeviceContextAction
       case 'hardware': editHardware(device);break
       case 'ports': editPorts(device);break
       case 'icon': await openIconPicker(device);break
+      case 'log': await showDeviceLog(device);break
       case 'delete': await deleteNode(device);break
     }
   }catch(error){store.failure=(error as Error).message}
@@ -252,6 +270,14 @@ onBeforeUnmount(()=>{if(interval)clearInterval(interval)})
       <div v-if="store.failure" role="alert" class="error-toast" @click="store.failure=''">{{store.failure}} <X :size="16"/></div>
     </main>
     <TerminalDock ref="terminal" :theme="theme" />
+    <div v-if="deviceLogOpen" class="dialog-overlay" @click.self="deviceLogOpen=false">
+      <div class="dialog-card device-log-dialog" role="dialog" :aria-label="'Журнал '+deviceLogName">
+        <h2>Журнал · {{deviceLogName}}</h2>
+        <p v-if="deviceLogLoading">Загрузка журнала…</p>
+        <pre v-else>{{deviceLogOutput}}</pre>
+        <div class="dialog-actions"><button type="button" @click="deviceLogOpen=false">Закрыть</button></div>
+      </div>
+    </div>
     <div v-if="hardwareOpen&&hardwareDraft" class="dialog-overlay" @click.self="!hardwareSaving&&(hardwareOpen=false)">
       <form class="dialog-card hardware-dialog" @submit.prevent="saveHardware">
         <h2>Параметры QEMU</h2>
