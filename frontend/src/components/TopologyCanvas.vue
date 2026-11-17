@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch, onBeforeUnmount, onMounted } from 'vue'
 import { VueFlow, useVueFlow, type Connection } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { MousePointer2, Hand, Scan, Cable as CableIcon, Maximize, Plus, Minus, MonitorPlay, Trash2, X, StickyNote, Type } from '@lucide/vue'
@@ -10,10 +10,12 @@ import DeviceNode from './DeviceNode.vue'
 import CableEdge from './CableEdge.vue'
 import AnnotationNode from './AnnotationNode.vue'
 import type { Device, Annotation } from '@/types'
+import { resizeAnnotation, clampAnnotationPosition, type ResizeSide, type AnnotationRect } from '@/topology/annotation-geometry'
 
 const store = useNetlabStore()
 const emit = defineEmits<{ (e:'console', device:Device):void; (e:'add'):void; (e:'bulk', ids:string[]):void }>()
-const { fitView, zoomIn, zoomOut, updateNodeInternals } = useVueFlow({ id:'netlab-topology' })
+const { fitView, zoomIn, zoomOut, updateNodeInternals, viewport, screenToFlowCoordinate } = useVueFlow({ id:'netlab-topology' })
+const canvasElement=ref<HTMLElement|null>(null)
 const panMode = ref(false)
 const cableMode = ref(false)
 const firstCableNode = ref<string | null>(null)
@@ -36,15 +38,103 @@ const current = computed(() => store.activeLab)
 const annotationOpen=ref(false)
 const annotationID=ref<string|null>(null)
 const annotationSaving=ref(false)
+const resizePreview=ref<{id:string;rect:AnnotationRect}|null>(null)
+const contextMenu=ref<{id:string;x:number;y:number}|null>(null)
+const resizeState=ref<{original:Annotation;side:ResizeSide;startX:number;startY:number}|null>(null)
+const editingAnnotation=computed(()=>current.value?.annotations?.find(note=>note.id===contextMenu.value?.id))
+function dismissContextMenu(){contextMenu.value=null}
+function openAnnotationContext(payload:{annotation:Annotation;event:MouseEvent}){
+  if(panMode.value||cableMode.value)return
+  const rect=canvasElement.value?.getBoundingClientRect()
+  if(!rect)return
+  contextMenu.value={
+    id:payload.annotation.id,
+    x:Math.max(8,Math.min(rect.width-190,payload.event.clientX-rect.left)),
+    y:Math.max(8,Math.min(rect.height-155,payload.event.clientY-rect.top))
+  }
+}
+function contextEdit(){
+  const item=editingAnnotation.value
+  dismissContextMenu()
+  if(item)editAnnotation(item)
+}
+async function contextDuplicate(){
+  const item=editingAnnotation.value
+  dismissContextMenu()
+  if(!item)return
+  const {id:_,...draft}=item
+  const position=clampAnnotationPosition(item.x+26,item.y+26)
+  try{await store.createAnnotation({...draft,...position})}
+  catch(e){store.failure=(e as Error).message}
+}
+async function contextDelete(){
+  const item=editingAnnotation.value
+  dismissContextMenu()
+  if(!item||!confirm('Удалить аннотацию?'))return
+  try{await store.removeAnnotation(item.id)}
+  catch(e){store.failure=(e as Error).message}
+}
+function resizeStart(payload:{annotation:Annotation;side:string;event:PointerEvent}){
+  if(panMode.value||cableMode.value||resizeState.value)return
+  if(payload.event.button!==0)return
+  dismissContextMenu()
+  const side=payload.side as ResizeSide
+  resizeState.value={original:payload.annotation,side,startX:payload.event.clientX,startY:payload.event.clientY}
+  resizePreview.value={id:payload.annotation.id,rect:{
+    x:payload.annotation.x,y:payload.annotation.y,width:payload.annotation.width,height:payload.annotation.height
+  }}
+  window.addEventListener('pointermove',resizeMove)
+  window.addEventListener('pointerup',resizeFinish)
+  window.addEventListener('pointercancel',resizeCancel)
+}
+function resizeMove(event:PointerEvent){
+  const state=resizeState.value
+  if(!state)return
+  const zoom=Math.max(.15,viewport.value.zoom||1)
+  const rect=resizeAnnotation(state.original,state.side,
+    (event.clientX-state.startX)/zoom,(event.clientY-state.startY)/zoom)
+  resizePreview.value={id:state.original.id,rect}
+}
+function stopResizeListeners(){
+  window.removeEventListener('pointermove',resizeMove)
+  window.removeEventListener('pointerup',resizeFinish)
+  window.removeEventListener('pointercancel',resizeCancel)
+}
+function resizeCancel(){
+  stopResizeListeners()
+  resizeState.value=null
+  resizePreview.value=null
+}
+async function resizeFinish(event:PointerEvent){
+  if(!resizeState.value)return
+  resizeMove(event)
+  const original=resizeState.value.original
+  const next=resizePreview.value?.rect
+  resizeCancel()
+  if(!next||(['x','y','width','height'] as const).every(k=>original[k]===next[k]))return
+  const {id:_,...draft}=original
+  try{await store.updateAnnotation(original.id,{...draft,...next})}
+  catch(e){store.failure=(e as Error).message}
+}
+function onKeyboard(event:KeyboardEvent){
+  if(event.key==='Escape'){dismissContextMenu();if(resizeState.value)resizeCancel()}
+}
+onMounted(()=>window.addEventListener('keydown',onKeyboard))
+onBeforeUnmount(()=>{window.removeEventListener('keydown',onKeyboard);resizeCancel()})
+
 const annotationDraft=ref<Omit<Annotation,'id'>>({
   kind:'note',text:'',x:160,y:160,width:220,height:100,
   color:'#253746',background:'#fff4c4',borderColor:'#d2b869',
   borderWidth:1,fontSize:14,bold:false,italic:false,underline:false,align:'left'
 })
 function newAnnotation(kind:'text'|'note'){
+  dismissContextMenu()
+  const bounds=canvasElement.value?.getBoundingClientRect()
+  const center=bounds?screenToFlowCoordinate({x:bounds.left+bounds.width/2,y:bounds.top+bounds.height/2}):{x:160,y:160}
+  const position=clampAnnotationPosition(center.x-110,center.y-45)
   annotationID.value=null
   annotationDraft.value={
-    kind,text:kind==='note'?'Новое примечание':'Текст',x:160,y:160,
+    kind,text:kind==='note'?'Новое примечание':'Текст',...position,
     width:kind==='note'?220:200,height:kind==='note'?100:48,
     color:'#253746',background:kind==='note'?'#fff4c4':'transparent',
     borderColor:kind==='note'?'#d2b869':'#728e9c',
@@ -92,11 +182,15 @@ const nodes = computed(() => [
     draggable:!panMode.value,selectable:!panMode.value,
     data:{device,anchors:portsByNode.value.get(device.id)||[]}
   }))||[]),
-  ...(current.value?.annotations||[]).map(annotation=>({
-    id:`annotation:${annotation.id}`,type:'annotation',
-    position:{x:annotation.x,y:annotation.y},draggable:!panMode.value,
-    selectable:!panMode.value,data:{annotation}
-  }))
+  ...(current.value?.annotations||[]).map(annotation=>{
+    const preview=resizePreview.value?.id===annotation.id?resizePreview.value.rect:null
+    const shown=preview?{...annotation,...preview}:annotation
+    return {
+      id:`annotation:${annotation.id}`,type:'annotation',
+      position:{x:shown.x,y:shown.y},draggable:!panMode.value&&!resizeState.value,
+      selectable:!panMode.value,data:{annotation:shown}
+    }
+  })
 ])
 const edges = computed(() => current.value?.links.filter(link=>geometry.value.has(link.id)).map(link => ({
   id:link.id,source:link.a,target:link.b,sourceHandle:`source-${link.id}`,targetHandle:`target-${link.id}`,
@@ -108,7 +202,7 @@ const edges = computed(() => current.value?.links.filter(link=>geometry.value.ha
 // After adding/removing a cable, Vue Flow must remeasure DOM handles.
 const internalsKey = computed(() => `${store.labID}:${current.value?.nodes.map(n=>`${n.id}:${n.x},${n.y}`).join('|')}:${current.value?.links.map(l=>`${l.id}:${l.a}:${l.b}`).join('|')}`)
 watch(internalsKey,async()=>{await nextTick();updateNodeInternals((current.value?.nodes || []).map(n=>n.id))},{flush:'post'})
-watch(()=>store.labID,async()=>{firstCableNode.value=null;selectedOnCanvas.value=[];await nextTick();void fitView({padding:.22,duration:250})})
+watch(()=>store.labID,async()=>{firstCableNode.value=null;selectedOnCanvas.value=[];dismissContextMenu();resizeCancel();await nextTick();void fitView({padding:.22,duration:250})})
 const startName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.a)?.name || '')
 const endName = computed(() => current.value?.nodes.find(n=>n.id===pending.value?.b)?.name || '')
 const firstPorts = computed(() => availablePorts(current.value?.nodes||[],current.value?.links||[],pending.value?.a||''))
@@ -171,7 +265,7 @@ function picked(event:{node:{id:string}}) {
   }
   store.selectedID=event.node.id
 }
-function canvasClick(){if(!panMode.value&&!cableMode.value)store.selectedID=null}
+function canvasClick(){dismissContextMenu();if(!panMode.value&&!cableMode.value)store.selectedID=null}
 function doubleClick(event:{node:{id:string}}){
   if(!event.node.id.startsWith('annotation:'))return
   const annotation=current.value?.annotations?.find(item=>item.id===event.node.id.slice('annotation:'.length))
@@ -180,14 +274,14 @@ function doubleClick(event:{node:{id:string}}){
 function closeEditor(){editingID.value=null}
 </script>
 <template>
-  <section class="topology-canvas" aria-label="Редактор топологии">
+  <section ref="canvasElement" class="topology-canvas" aria-label="Редактор топологии" @click.self="dismissContextMenu">
     <VueFlow id="netlab-topology" :nodes="nodes" :edges="edges" :nodes-draggable="!panMode" :nodes-connectable="!panMode"
       :elements-selectable="!panMode" :pan-on-drag="panMode" :selection-on-drag="!panMode"
       :min-zoom=".15" :max-zoom="3" :fit-view-on-init="true"
       @connect="onConnect" @node-drag-stop="dragStopped" @node-click="picked" @node-double-click="doubleClick" @pane-click="canvasClick" @selection-change="selectionChanged">
       <Background pattern-color="var(--grid)" :gap="20" :size="1" />
       <template #node-device="data"><DeviceNode :data="data.data" /></template>
-      <template #node-annotation="data"><AnnotationNode :data="data.data" /></template>
+      <template #node-annotation="data"><AnnotationNode :data="data.data" @resize-start="resizeStart" @context="openAnnotationContext" /></template>
       <template #edge-cable="data"><CableEdge v-bind="data" /></template>
     </VueFlow>
     <div class="canvas-tools" role="toolbar" aria-label="Инструменты топологии">
@@ -210,6 +304,11 @@ function closeEditor(){editingID.value=null}
     <div v-if="!panMode&&!cableMode" class="canvas-selection-hint">Shift + перетаскивание — выделить рамкой · Ctrl/Cmd + клик — несколько устройств</div>
     <div v-if="cableMode" class="canvas-cable-hint"><CableIcon :size="14"/> {{firstCableNode?'Выберите второе устройство':'Выберите первое устройство'}} <button title="Отменить" @click="cableMode=false;firstCableNode=null"><X :size="13"/></button></div>
     <div v-if="!current?.nodes.length" class="canvas-empty"><MonitorPlay :size="30"/><strong>Лаборатория пуста</strong><span>Нажмите «+», чтобы добавить устройство</span></div>
+    <div v-if="contextMenu&&editingAnnotation" class="annotation-context-menu" role="menu" aria-label="Аннотация" :style="{left:`${contextMenu.x}px`,top:`${contextMenu.y}px`}">
+      <button type="button" role="menuitem" @click="contextEdit">Изменить оформление</button>
+      <button type="button" role="menuitem" @click="contextDuplicate">Дублировать</button>
+      <button type="button" role="menuitem" class="danger" @click="contextDelete">Удалить</button>
+    </div>
     <div v-if="annotationOpen" class="dialog-overlay" @click.self="annotationOpen=false">
       <form class="dialog-card annotation-dialog" @submit.prevent="saveAnnotation">
         <div class="dialog-heading"><StickyNote :size="18"/><strong>{{annotationID?'Редактировать':'Добавить'}} {{annotationDraft.kind==='note'?'примечание':'текст'}}</strong></div>
