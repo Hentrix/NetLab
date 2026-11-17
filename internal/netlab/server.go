@@ -25,6 +25,7 @@ type Server struct {
 	sampler          metricSampler
 	ticketsMu        sync.Mutex
 	vncTickets       map[string]vncTicket
+	recoveryError string // diagnostic after startup network reconciliation
 }
 
 func NewServer(data, web, token string) (*Server, error) {
@@ -48,11 +49,15 @@ func NewServer(data, web, token string) (*Server, error) {
 		return nil, err
 	}
 	e := NewEngine(data)
-	// Reconcile stale lab switches only when the system tools are present.
-	if _, err := exec.LookPath("ovs-vsctl"); err == nil {
-		e.Recover(store.State.Labs)
-	}
-	return &Server{store: store, engine: e, data: data, web: web, token: token,vncTickets:make(map[string]vncTicket)}, nil
+	// A responsive old QEMU must retain its TAP and OVS connections. Problems
+	// remain visible in /api/system instead of silently discarding recovery errors.
+	recoveryError:=""
+	if _,err:=exec.LookPath("ovs-vsctl");err==nil {
+		if _,ipErr:=exec.LookPath("ip");ipErr==nil {
+			if err:=e.RecoverChecked(store.State.Labs);err!=nil {recoveryError=err.Error()}
+		} else {recoveryError="восстановление сети не выполнено: ip не установлен"}
+	} else {recoveryError="восстановление сети не выполнено: ovs-vsctl не установлен"}
+	return &Server{store:store,engine:e,data:data,web:web,token:token,vncTickets:make(map[string]vncTicket),recoveryError:recoveryError},nil
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -160,7 +165,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 				kvm = canUseKVM(cred)
 			}
 		}
-		respond(w, 200, map[string]any{"qemu": q == nil, "ovs": ov == nil, "qemuImg": img == nil, "vmUser": userErr == nil, "kvm": kvm, "qemuSpawn": qemuSpawn, "qemuSpawnError": qemuSpawnError, "vpcs": vpcsErr == nil, "vpcsSpawn": vpcsSpawn, "vpcsSpawnError": vpcsSpawnError})
+		respond(w, 200, map[string]any{"qemu": q == nil, "ovs": ov == nil, "qemuImg": img == nil, "vmUser": userErr == nil, "kvm": kvm, "qemuSpawn": qemuSpawn, "qemuSpawnError": qemuSpawnError, "vpcs": vpcsErr == nil, "vpcsSpawn": vpcsSpawn, "vpcsSpawnError": vpcsSpawnError, "recoveryError": s.recoveryError, "recoveryReady": s.recoveryError == ""})
 		return
 	case "templates":
 		if r.Method != "GET" {

@@ -14,6 +14,7 @@ const caps=computed(()=>[
 const health=computed(()=>[
   {name:'Запуск QEMU от netlab-vm',ok:store.system.qemuSpawn===true,detail:store.system.qemuSpawnError||'Проверка запуска с понижением привилегий прошла'},
   {name:'Запуск VPCS от netlab-vm',ok:store.system.vpcsSpawn===true,detail:store.system.vpcsSpawnError||'Проверка смены UID/GID и PTY прошла'},
+  {name:'Восстановление сети после перезапуска',ok:store.system.recoveryReady===true,detail:store.system.recoveryError||'Старые сетевые ресурсы согласованы; диски и образы не затронуты'},
 ])
 const available=computed(()=>caps.value.filter(x=>x.ok).length)
 const healthy=computed(()=>store.live&&caps.value.every(x=>x.ok)&&health.value.every(x=>x.ok))
@@ -36,7 +37,7 @@ onMounted(()=>{void store.refreshSystem()})
     <section class="system-components"><article v-for="item in caps" :key="item.id" class="system-component"><div class="system-component-icon"><component :is="item.icon" :size="20"/></div><div class="system-component-description"><strong>{{item.title}}</strong><small>{{item.detail}}</small></div><span class="system-chip" :class="{ok:item.ok}">{{item.ok?'Доступен':'Недоступен'}}</span></article></section>
     <div class="system-section-title"><h2>Проверка запуска</h2><span>Права и изоляция процессов</span></div>
     <section class="system-diagnostics"><article v-for="test in health" :key="test.name" class="system-diagnostic"><CheckCircle2 v-if="test.ok" class="system-check-good" :size="19"/><AlertTriangle v-else class="system-check-bad" :size="19"/><div><strong>{{test.name}}</strong><p>{{test.detail}}</p></div><span class="system-chip" :class="{ok:test.ok}">{{test.ok?'Пройдена':'Ошибка'}}</span></article></section>
-    <div v-if="!health.every(t=>t.ok)" class="system-guidance"><Info :size="19"/><div><strong>Диагностика запуска устройств</strong><p>Если VPCS выдаёт «operation not permitted», обнови службу NetLab: для смены UID, GID и дополнительных групп необходимы <code>CAP_SETUID</code> и <code>CAP_SETGID</code>. После обновления повтори проверку. Журнал: <code>sudo journalctl -u netlab -n 100</code>.</p></div></div>
+    <div v-if="!health.every(t=>t.ok)" class="system-guidance"><Info :size="19"/><div><strong>Диагностика запуска и восстановления</strong><p>Если VPCS выдаёт «operation not permitted», обнови службу NetLab: для смены UID, GID и дополнительных групп необходимы <code>CAP_SETUID</code> и <code>CAP_SETGID</code>. После обновления повтори проверку. Журнал: <code>sudo journalctl -u netlab -n 100</code>.</p></div></div>
     <div class="system-guidance system-guidance-muted"><TerminalSquare :size="18"/><div><strong>О сервере</strong><p>Измерения CPU и RAM поступают с Debian через <code>/api/metrics</code>. Статус VPCS означает доступность бинарника, проверка запуска — отдельная. Это не подтверждение передачи Ethernet-пакетов в гостевой системе.</p></div></div>
   </div>
 </template>

@@ -589,26 +589,56 @@ func (e *Engine) Stop(lab, node string) error {
 	}, 3*time.Second, 2*time.Second)
 }
 func (e *Engine) Cleanup(l Lab) { _ = e.CleanupChecked(l) }
-func (e *Engine) Recover(labs []Lab) {
-	// Only NetLab-owned interfaces from persisted records; never touch host uplinks.
-	for _, l := range labs {
-		for _, ln := range l.Links {
-			if validID(ln.ID) {
-				_ = e.exec("ovs-vsctl", "--if-exists", "del-br", bridgeName(ln.ID))
-			}
-		}
-		// v0.4 allocates even disconnected ports. Clean all of them, not only
-		// those named in a saved link. This also handles abrupt process crashes.
-		for _, n := range l.Nodes {
-			if !validID(n.ID) {
-				continue
-			}
-			for port := 0; port < portCapacity(&n); port++ {
-				_ = e.exec("ip", "link", "del", tapName(n.ID, port))
-			}
-		}
-	}
+// RecoverChecked reconciles network state after a service crash. Never delete
+// TAPs or OVS bridges of a still-responsive QEMU left from a previous daemon.
+// Runtime disks, ISO files and guest logs are deliberately untouched.
+func (e *Engine) RecoverChecked(labs []Lab) error {
+ var problems []string
+ for _, l := range labs {
+  // The service may have been restarted without killing guest children.
+  // QMP is the guest's own control channel; active guests take precedence
+  // over stale saved topology and must be stopped by an administrator.
+  active:=false
+  for _,n:=range l.Nodes {
+   if n.Engine=="vpcs"||!validID(l.ID)||!validID(n.ID) {continue}
+   qmp:=filepath.Join(e.data,"runtime",l.ID,n.ID,"monitor.sock")
+   if _,err:=os.Lstat(qmp);err==nil {
+    // A successful connect is sufficient evidence of a live QEMU. Do not
+    // require a completed QMP handshake during VM startup or shutdown.
+    conn,dialErr:=net.DialTimeout("unix",qmp,300*time.Millisecond)
+    if conn!=nil {_=conn.Close()}
+    if dialErr==nil || errors.Is(dialErr,syscall.EACCES) || errors.Is(dialErr,syscall.EPERM) {
+     problems=append(problems,fmt.Sprintf("лаборатория %s: QEMU %s ещё использует QMP; сеть сохранена, остановите старый процесс перед восстановлением",l.Name,n.Name))
+     active=true
+     break
+    }
+   }
+  }
+  if active {continue}
+  ovsFailed:=false
+  for _,ln:=range l.Links {
+   if !validID(ln.ID) {continue}
+   if err:=e.exec("ovs-vsctl","--if-exists","del-br",bridgeName(ln.ID));err!=nil {
+    problems=append(problems,fmt.Sprintf("OVS %s: %v",ln.ID,err))
+    ovsFailed=true
+   }
+  }
+  // A partially recovered OVS network should remain intact for diagnosis.
+  if ovsFailed {continue}
+  for _,n:=range l.Nodes {
+   if !validID(n.ID) {continue}
+   for port:=0;port<portCapacity(&n);port++ {
+    // A missing TAP is expected after a clean reboot. Retain the existing
+    // best-effort behavior for missing interfaces.
+    _=e.exec("ip","link","del",tapName(n.ID,port))
+   }
+  }
+ }
+ if len(problems)>0{return errors.New(strings.Join(problems,"; "))}
+ return nil
 }
+// Recover remains for callers that do not consume diagnostic errors.
+func (e *Engine) Recover(labs []Lab) { _=e.RecoverChecked(labs) }
 func imageInfo(path string) (string, error) {
 	out, err := exec.Command("qemu-img", "info", "--output=json", path).Output()
 	if err != nil {

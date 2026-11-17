@@ -36,6 +36,7 @@ export interface HostSystem {
   qemu?: boolean; ovs?: boolean; vpcs?: boolean; kvm?: boolean
   qemuImg?: boolean; vmUser?: boolean; qemuSpawn?: boolean; qemuSpawnError?: string
   vpcsSpawn?: boolean; vpcsSpawnError?: string
+  recoveryReady?: boolean; recoveryError?: string
 }
 export interface HostMetrics {
   cpuPercent?: number | null; memoryUsedMiB?: number
