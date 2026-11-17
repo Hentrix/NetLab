@@ -25,12 +25,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Установить зависимости
-        run: npm install --no-audit --no-fund
-        working-directory: frontend
-      - name: Проверить TypeScript и собрать Vue
-        run: npm run build
-        working-directory: frontend
+      - name: Установить зависимости и собрать Vue через штатный скрипт
+        run: bash scripts/build-frontend.sh
       - name: Запустить тесты
         run: npm run test
         working-directory: frontend
